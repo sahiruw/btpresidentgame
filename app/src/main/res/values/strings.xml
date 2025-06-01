@@ -1,3 +1,35 @@
 <resources>
     <string name="app_name">bt-president-game</string>
+    <string name="app_logo">President Card Game Logo</string>
+    <string name="president_card_game">President Card Game</string>
+    <string name="main_description">Play the classic President card game with friends over Bluetooth. Create a game and invite others or join an existing game.</string>
+    <string name="create_game">Create Game</string>
+    <string name="join_game">Join Game</string>
+    <string name="version_1_0">Version 1.0</string>
+    <string name="start_game">Start Game</string>
+    <string name="play_cards">Play Cards</string>
+    <string name="pass">Pass</string>
+    <string name="current_play">Current Play</string>
+    <string name="your_turn">Your Turn</string>
+    <string name="waiting_for_turn">Waiting for your turn…</string>
+    <string name="game_over">Game Over</string>
+    <string name="player_status_president">President</string>
+    <string name="player_status_vice_president">Vice President</string>
+    <string name="player_status_neutral">Neutral</string>
+    <string name="player_status_vice_beggar">Vice Beggar</string>
+    <string name="player_status_beggar">Beggar</string>
+    <string name="waiting_for_players">Waiting for players to join…</string>
+    <string name="game_started">Game Started!</string>
+    <string name="selecting_cards">Select cards to play</string>
+    <string name="player_passed">%1$s passed</string>
+    <string name="player_played_cards">%1$s played %2$d cards</string>
+    <string name="connected_to_game">Connected to %1$s\'s game</string>
+    <string name="player_cards_count">Cards: %1$d</string>
+    <string name="current_turn">Current Turn</string>
+    <string name="played_by">Played by: %1$s</string>
+    <string name="ok">OK</string>
+    <string name="result_president">Congratulations! You are the President!</string>
+    <string name="result_vice_president">Well done! You are the Vice President!</string>    <string name="result_neutral">You finished in the middle.</string>
+    <string name="result_vice_scum">You are the Vice Scum. Better luck next time!</string>
+    <string name="result_scum">You are the Scum. Try harder next time!</string>
 </resources>

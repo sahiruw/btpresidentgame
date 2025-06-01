@@ -55,17 +55,21 @@ class MainViewModel @Inject constructor(
 
     fun initializeBluetooth(adapter: BluetoothAdapter) {
         bluetoothAdapter = adapter
-        gameRepository.initializeBluetoothService(adapter)
+        gameRepository.initializeBluetooth(adapter)
     }
 
     fun startHostingGame() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                serverSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord(SERVICE_NAME, SERVICE_UUID)
-                _gameCreatedEvent.emit(Unit)
+                gameRepository.initializeGameAsHost()
                 
                 // Start accepting connections in the background
-                gameRepository.startHostingGame(serverSocket!!)
+                val success = gameRepository.startHostingGame()
+                if (success) {
+                    _gameCreatedEvent.emit(Unit)
+                } else {
+                    _errorEvent.emit("Failed to start hosting game")
+                }
             } catch (e: IOException) {
                 _errorEvent.emit("Failed to create game: ${e.message}")
                 Log.e(TAG, "Error starting server socket", e)
@@ -136,7 +140,9 @@ class MainViewModel @Inject constructor(
                 val device = bluetoothAdapter.getRemoteDevice(deviceAddress)
                 val deviceName = device.name ?: "Unknown Device"
                 
-                val success = gameRepository.connectToGame(device, SERVICE_UUID)
+                gameRepository.initializeGameAsClient()
+                val success = gameRepository.connectToGame(device)
+                
                 if (success) {
                     _connectedToGameEvent.emit(deviceName)
                 } else {

@@ -9,6 +9,9 @@ data class Card(
     val suit: Suit,
     val rank: Rank
 ) : Parcelable, Comparable<Card> {
+    val value: Int
+        get() = rank.value
+        
     override fun compareTo(other: Card): Int {
         return rank.value.compareTo(other.rank.value)
     }

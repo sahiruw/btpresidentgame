@@ -7,4 +7,14 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    
+    <!-- Card Colors -->
+    <color name="card_selected_background">#E6F3FF</color>
+    
+    <!-- Player Rank Colors -->
+    <color name="rank_president">#FFD700</color> <!-- Gold -->
+    <color name="rank_vice_president">#C0C0C0</color> <!-- Silver -->
+    <color name="rank_neutral">#808080</color> <!-- Gray -->
+    <color name="rank_vice_scum">#CD7F32</color> <!-- Bronze -->
+    <color name="rank_scum">#A52A2A</color> <!-- Brown -->
 </resources>
