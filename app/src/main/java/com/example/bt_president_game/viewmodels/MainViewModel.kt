@@ -92,7 +92,8 @@ class MainViewModel @Inject constructor(
                 Log.e(TAG, "Error starting server socket", e)
             }
         }
-    }    fun startDiscovery() {
+    }    
+    fun startDiscovery() {
         Log.d(TAG, "Starting Bluetooth discovery")
         
         val bt = bluetoothAdapter

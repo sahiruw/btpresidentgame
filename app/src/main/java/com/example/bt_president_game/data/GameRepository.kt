@@ -30,7 +30,7 @@ class GameRepository @Inject constructor() {
     
     companion object {
         private const val TAG = "GameRepository"
-        private const val MAX_PLAYERS = 2 // Maximum number of players in a president game
+        private const val MAX_PLAYERS = 3 // Maximum number of players in a president game
         private val SERVICE_UUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66")
     }
     
