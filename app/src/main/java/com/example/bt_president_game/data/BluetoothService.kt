@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.InputStream
@@ -20,26 +21,32 @@ class BluetoothService(
 
     companion object {
         private const val TAG = "BluetoothService"
-    }
-
-    private val connectedSockets = ConcurrentHashMap<String, ConnectedDevice>()
+    }    private val connectedSockets = ConcurrentHashMap<String, ConnectedDevice>()
     private var isRunning = false
-
+    
     suspend fun startAcceptingConnections(serverSocket: BluetoothServerSocket, maxConnections: Int): Boolean {
         isRunning = true
         
         return withContext(Dispatchers.IO) {
             try {
                 var connectionCount = 0
+                var retryCount = 0
+                val maxRetries = 3
                 
                 while (isRunning && connectionCount < maxConnections) {
                     try {                        
-                        Log.d(TAG, "Waiting for incoming connections...")
-                        // This call will block until a connection is accepted or an exception occurs
-                        // Use accept(timeout) to prevent infinite blocking
-                        val socket = serverSocket.accept(30000) // 30 seconds timeout
+                        Log.d(TAG, "Waiting for incoming connections... (Attempt ${retryCount + 1})")                        // This call will block until a connection is accepted or an exception occurs
+                        // For better compatibility, use the non-timeout version of accept
+                        Log.d(TAG, "Server is discoverable: ${bluetoothAdapter.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE}")
+                        val socket = serverSocket.accept()
                         
+                        // Reset retry counter on successful connection
+                        retryCount = 0
+                        Log.d(TAG, "Connection accepted from ${socket} (${socket.remoteDevice})")
                         val deviceId = socket.remoteDevice.address
+                        val deviceName = socket.remoteDevice.name ?: "Unknown"
+                        Log.d(TAG, "Device connected: $deviceName ($deviceId)")
+                        
                         val connectedDevice = ConnectedDevice(socket, deviceId)
                         connectedSockets[deviceId] = connectedDevice
                         
@@ -47,29 +54,41 @@ class BluetoothService(
                         connectedDevice.startCommunication()
                         connectionCount++
                         
-                        Log.d(TAG, "Accepted connection from $deviceId")
+                        Log.d(TAG, "Accepted connection from $deviceId, total connections: $connectionCount")
                         // Send current players list to the new client
                         // sendPlayersList(deviceId)
                         
                     } catch (e: IOException) {
                         Log.e(TAG, "Accept failed", e)
-                        break
+                        retryCount++
+                        
+                        // Only break if we've exceeded max retries or if it's not a "Try again" error
+                        if (retryCount >= maxRetries || e.message?.contains("Try again") != true) {
+                            Log.e(TAG, "Max retries exceeded or fatal error occurred, giving up: ${e.message}")
+                            break
+                        }
+                          Log.d(TAG, "Retrying after transient error (${e.message}), attempt $retryCount of $maxRetries")
+                        delay(2000) // Wait 2 seconds before retrying
                     }
                 }
                 
-                true
+                val result = connectionCount > 0 || !isRunning // Success if we have connections or if we stopped voluntarily
+                Log.d(TAG, "Connection acceptance completed with result: $result (connections: $connectionCount)")
+                result
             } catch (e: Exception) {
                 Log.e(TAG, "Error in acceptThread", e)
                 false
             }
         }
-    }
-
-    suspend fun connectToServer(device: BluetoothDevice, uuid: UUID): Boolean {
+    }    suspend fun connectToServer(device: BluetoothDevice, uuid: UUID): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                Log.d(TAG, "Connecting to server device: ${device.name} (${device.address})")
+                Log.d(TAG, "Device class: ${device.bluetoothClass?.majorDeviceClass}, bond state: ${device.bondState}")
+                
                 // Get a BluetoothSocket for a connection with the given BluetoothDevice
-                val socket = device.createRfcommSocketToServiceRecord(uuid)
+                // Using createInsecureRfcommSocketToServiceRecord for better compatibility
+                val socket = device.createInsecureRfcommSocketToServiceRecord(uuid)
                 
                 // Try to connect to the remote device
                 socket.connect()

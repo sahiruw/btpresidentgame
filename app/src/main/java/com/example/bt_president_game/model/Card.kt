@@ -1,4 +1,5 @@
 package com.example.bt_president_game.model
+import java.io.Serializable
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
@@ -8,7 +9,7 @@ data class Card(
     val id: Int,
     val suit: Suit,
     val rank: Rank
-) : Parcelable, Comparable<Card> {
+) : Parcelable,Serializable, Comparable<Card> {
     val value: Int
         get() = rank.value
         

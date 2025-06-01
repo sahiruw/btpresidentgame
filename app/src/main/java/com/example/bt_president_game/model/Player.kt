@@ -1,4 +1,5 @@
 package com.example.bt_president_game.model
+import java.io.Serializable
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
@@ -9,7 +10,7 @@ data class Player(
     val name: String,
     val isHost: Boolean = false,
     val rank: PlayerRank = PlayerRank.NEUTRAL
-) : Parcelable
+) : Parcelable, Serializable
 
 enum class PlayerRank {
     PRESIDENT,

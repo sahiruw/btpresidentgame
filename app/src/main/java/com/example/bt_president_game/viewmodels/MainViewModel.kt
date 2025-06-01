@@ -78,29 +78,72 @@ class MainViewModel @Inject constructor(
                 Log.e(TAG, "Error starting server socket", e)
             }
         }
-    }
-
-    fun startDiscovery() {
-        Log.d(TAG, "Starting Bluetooth discovery 0")
-        if (isDiscovering) return
+    }    fun startDiscovery() {
+        Log.d(TAG, "Starting Bluetooth discovery")
+        if (isDiscovering) {
+            Log.d(TAG, "Discovery already in progress, canceling previous discovery")
+            bluetoothAdapter.cancelDiscovery()
+        }
         
         isDiscovering = true
         discoveredDevices.clear()
-        Log.d(TAG, "Starting Bluetooth discovery")
+        Log.d(TAG, "Cleared previous discovered devices")
+        
+        // First, add any already paired devices to the list
+        try {
+            val pairedDevices = bluetoothAdapter.bondedDevices
+            if (pairedDevices.isNotEmpty()) {
+                Log.d(TAG, "Found ${pairedDevices.size} paired devices")
+                for (device in pairedDevices) {
+                    val deviceName = device.name ?: "Unknown Device"
+                    val deviceAddress = device.address
+                    Log.d(TAG, "Adding paired device: $deviceName ($deviceAddress)")
+                    discoveredDevices[deviceAddress] = Pair(deviceName, deviceAddress)
+                }
+                viewModelScope.launch {
+                    _foundDevicesEvent.emit(discoveredDevices.values.toList())
+                }
+            } else {
+                Log.d(TAG, "No paired devices found")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error accessing paired devices", e)
+        }
         
         if (discoveryReceiver == null) {
             discoveryReceiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
+                    Log.d(TAG, "Discovery receiver triggered: ${intent} context: $context")
                     when (intent.action) {
                         BluetoothDevice.ACTION_FOUND -> {
-                            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                            // Use the newer API to avoid deprecation warning
+                            val device = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                            }
                             device?.let {
-                                val deviceName = it.name ?: "Unknown Device"
+                                val deviceName = it.name
                                 val deviceAddress = it.address
+                                val bondState = getBondStateString(it.bondState)
+                                val deviceClass = it.bluetoothClass?.majorDeviceClass ?: -1
+                                
+                                Log.d(TAG, "Discovered device: $deviceAddress")
+                                Log.d(TAG, "Device details: Name='${deviceName ?: "null"}', " +
+                                           "Address=$deviceAddress, " +
+                                           "BondState=$bondState, " +
+                                           "DeviceClass=$deviceClass" +
+                                           "device=$it")
+                                
+                                // Some devices might not broadcast their name during discovery
+                                // For those, we can try to get name if the device is already bonded
+                                val finalDeviceName = deviceName ?: "Unknown Device"
                                 
                                 if (!discoveredDevices.containsKey(deviceAddress)) {
-                                    discoveredDevices[deviceAddress] = Pair(deviceName, deviceAddress)
+                                    discoveredDevices[deviceAddress] = Pair(finalDeviceName, deviceAddress)
                                     
+                                    Log.d(TAG, "New device added to discovered list: $finalDeviceName ($deviceAddress)")
                                     viewModelScope.launch {
                                         _foundDevicesEvent.emit(discoveredDevices.values.toList())
                                     }
@@ -181,10 +224,18 @@ class MainViewModel @Inject constructor(
                 Log.e(TAG, "Error during cleanup", e)
             }
         }
-    }
-
-    override fun onCleared() {
+    }    override fun onCleared() {
         super.onCleared()
         cleanup()
+    }
+    
+    // Helper function to convert bond state integer to readable string
+    private fun getBondStateString(bondState: Int): String {
+        return when (bondState) {
+            BluetoothDevice.BOND_NONE -> "NONE"
+            BluetoothDevice.BOND_BONDING -> "BONDING"
+            BluetoothDevice.BOND_BONDED -> "BONDED"
+            else -> "UNKNOWN"
+        }
     }
 }

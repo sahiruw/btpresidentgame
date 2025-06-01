@@ -21,6 +21,7 @@ import java.io.ByteArrayOutputStream
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.util.UUID
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,7 +30,7 @@ class GameRepository @Inject constructor() {
     
     companion object {
         private const val TAG = "GameRepository"
-        private const val MAX_PLAYERS = 3 // Maximum number of players in a president game
+        private const val MAX_PLAYERS = 2 // Maximum number of players in a president game
         private val SERVICE_UUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66")
     }
     
@@ -69,13 +70,22 @@ class GameRepository @Inject constructor() {
     fun initializeGameAsHost() {
         if (bluetoothAdapter == null) {
             throw IllegalStateException("BluetoothAdapter not initialized")
-        }
-
+        }        
         _isHost.value = true
         _gameState.value = GameState.WAITING_FOR_PLAYERS
         
+        // Log the Bluetooth adapter's discoverable state
+        val isDiscoverable = bluetoothAdapter?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE
+        Log.d(TAG, "Host's Bluetooth discoverable state: $isDiscoverable")
+        Log.d(TAG, "Host's device name: ${bluetoothAdapter?.name}, address: ${bluetoothAdapter?.address}")
+        
         // Create a server socket and listen for connections
-        serverSocket = bluetoothAdapter?.listenUsingRfcommWithServiceRecord("PresidentGame", SERVICE_UUID)
+        // Using insecureRfcommWithServiceRecord makes it easier to connect without pairing
+        serverSocket = bluetoothAdapter?.listenUsingInsecureRfcommWithServiceRecord("PresidentGame", SERVICE_UUID)
+        if (serverSocket == null) {
+            throw IOException("Could not create server socket")
+        }
+        Log.d(TAG, "Server socket created, waiting for connections...")
         
         // Initialize the BluetoothService if not already done
         if (bluetoothService == null) {
@@ -404,6 +414,7 @@ class GameRepository @Inject constructor() {
 
     // Serialization and deserialization methods
     private fun serializeMessage(message: GameMessage): String {
+        Log.d(TAG, "Serializing message: ${message}")
         try {
             val byteArrayOutputStream = ByteArrayOutputStream()
             val objectOutputStream = ObjectOutputStream(byteArrayOutputStream)
@@ -422,6 +433,8 @@ class GameRepository @Inject constructor() {
     }
     
     private fun deserializeMessage(serializedMessage: String): GameMessage? {
+        Log.d(TAG, "Raw incoming message (truncated): ${serializedMessage}")
+        
         try {
             val bytes = android.util.Base64.decode(serializedMessage, android.util.Base64.DEFAULT)
             val byteArrayInputStream = ByteArrayInputStream(bytes)
@@ -453,9 +466,32 @@ class GameRepository @Inject constructor() {
         _currentPlay.value = null
         _currentPlayerId.value = null
         _finishedPlayers.value = emptyList()
-    }
-      fun initializeBluetooth(adapter: BluetoothAdapter) {
+    }    fun initializeBluetooth(adapter: BluetoothAdapter) {
         this.bluetoothAdapter = adapter
+        
+        // Log Bluetooth adapter details
+        Log.d(TAG, "Initializing Bluetooth adapter:")
+        Log.d(TAG, "- Name: ${adapter.name}")
+        Log.d(TAG, "- Address: ${adapter.address}")
+        Log.d(TAG, "- State: ${getAdapterStateString(adapter.state)}")
+        Log.d(TAG, "- Scanning: ${adapter.isDiscovering}")
+        Log.d(TAG, "- Enabled: ${adapter.isEnabled}")
+        Log.d(TAG, "- Discovery allowed: ${adapter.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE}")
+        
+        // Get paired devices and log them
+        try {
+            val pairedDevices = adapter.bondedDevices
+            if (pairedDevices.isNotEmpty()) {
+                Log.d(TAG, "Paired devices (${pairedDevices.size}):")
+                pairedDevices.forEach { device ->
+                    Log.d(TAG, "  - ${device.name ?: "Unknown"} (${device.address})")
+                }
+            } else {
+                Log.d(TAG, "No paired devices found")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error accessing paired devices: ${e.message}")
+        }
         
         // Register a BluetoothManagerCallback to prevent "getBluetoothService() called with no BluetoothManagerCallback" warning
         try {
@@ -479,6 +515,17 @@ class GameRepository @Inject constructor() {
         } catch (e: Exception) {
             // This is a workaround for the warning, so we just log the error if it doesn't work
             Log.d(TAG, "Could not access BluetoothManager internals: ${e.message}")
+        }
+    }
+    
+    // Helper function to convert adapter state to string
+    private fun getAdapterStateString(state: Int): String {
+        return when (state) {
+            BluetoothAdapter.STATE_OFF -> "OFF"
+            BluetoothAdapter.STATE_TURNING_ON -> "TURNING_ON"
+            BluetoothAdapter.STATE_ON -> "ON"
+            BluetoothAdapter.STATE_TURNING_OFF -> "TURNING_OFF"
+            else -> "UNKNOWN"
         }
     }
 }

@@ -3,6 +3,7 @@ package com.example.bt_president_game
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.util.Log
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -30,15 +31,29 @@ class MainActivity : AppCompatActivity() {
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         bluetoothManager.adapter
-    }
-
+    }    
+    
     private val bluetoothEnableResultLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            setupBluetoothFunctionality()
+            makeDeviceDiscoverable()
         } else {
             Toast.makeText(this, "Bluetooth is required for this app", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    private val bluetoothDiscoverableResultLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        // result.resultCode contains the duration the device will be discoverable, or
+        // RESULT_CANCELED if the user rejected discoverable mode
+        if (result.resultCode > 0) {
+            Log.d("MainActivity", "Device will be discoverable for ${result.resultCode} seconds")
+            setupBluetoothFunctionality()
+        } else {
+            Log.d("MainActivity", "User declined to make device discoverable. Proceeding anyway.")
+            setupBluetoothFunctionality()
         }
     }
     
@@ -113,8 +128,7 @@ class MainActivity : AppCompatActivity() {
             enableBluetooth()
         }
     }
-    
-    private fun enableBluetooth() {
+      private fun enableBluetooth() {
         bluetoothAdapter?.let {
             if (!it.isEnabled) {
                 val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
@@ -126,7 +140,7 @@ class MainActivity : AppCompatActivity() {
                     bluetoothEnableResultLauncher.launch(enableBtIntent)
                 }
             } else {
-                setupBluetoothFunctionality()
+                makeDeviceDiscoverable()
             }
         } ?: run {
             Toast.makeText(this, "This device doesn't support Bluetooth", Toast.LENGTH_LONG).show()
@@ -134,7 +148,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    private fun makeDeviceDiscoverable() {
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_ADVERTISE
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            // Make device discoverable for 300 seconds (5 minutes)
+            val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+            discoverableIntent.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+            
+            // Register for the result only if we have the right permission
+            bluetoothDiscoverableResultLauncher.launch(discoverableIntent)
+        } else {
+            // If we don't have permission, just proceed with setup
+            setupBluetoothFunctionality()
+        }
+    }
+    
     private fun setupBluetoothFunctionality() {
+        Log.d("MainActivity", "Setting up Bluetooth functionality")
+        Log.d("MainActivity", "Bluetooth adapter name: ${bluetoothAdapter?.name}, address: ${bluetoothAdapter?.address}")
+        Log.d("MainActivity", "Discoverable: ${bluetoothAdapter?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE}")
+        
         viewModel.initializeBluetooth(bluetoothAdapter!!)
     }
     
