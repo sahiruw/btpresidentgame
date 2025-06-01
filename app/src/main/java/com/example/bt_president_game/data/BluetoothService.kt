@@ -21,8 +21,58 @@ class BluetoothService(
 
     companion object {
         private const val TAG = "BluetoothService"
-    }    private val connectedSockets = ConcurrentHashMap<String, ConnectedDevice>()
+        private const val MESSAGE_DELIMITER = "##END_OF_MESSAGE##" // Special marker for end of complete message
+        private const val BUFFER_TIMEOUT_MS = 5000 // 5 seconds timeout for message buffer
+    }    
+    
+    // Store incomplete messages by device ID
+    private val messageBuffers = ConcurrentHashMap<String, MessageBuffer>()
+    private val connectedSockets = ConcurrentHashMap<String, ConnectedDevice>()
     private var isRunning = false
+    
+    // Class to handle message buffering and detect complete messages
+    private inner class MessageBuffer {
+        private val buffer = StringBuilder()
+        private var lastUpdateTime = System.currentTimeMillis()
+        
+        // Add fragment to buffer and return complete message if available
+        @Synchronized
+        fun appendFragment(fragment: String): String? {
+            lastUpdateTime = System.currentTimeMillis()
+            buffer.append(fragment)
+            
+            // Check if this fragment completes a message
+            if (buffer.contains(MESSAGE_DELIMITER)) {
+                val completeMessage = buffer.toString()
+                buffer.clear() // Reset buffer after processing
+                return completeMessage.replace(MESSAGE_DELIMITER, "")
+            }
+            
+            return null
+        }
+        
+        // Check if buffer is stale and should be processed anyway
+        @Synchronized
+        fun isStale(): Boolean {
+            return System.currentTimeMillis() - lastUpdateTime > BUFFER_TIMEOUT_MS
+        }
+        
+        // Get and clear buffer contents if stale
+        @Synchronized
+        fun getAndClearIfStale(): String? {
+            if (isStale() && buffer.isNotEmpty()) {
+                val content = buffer.toString()
+                buffer.clear()
+                return content
+            }
+            return null
+        }
+        
+        @Synchronized
+        fun clear() {
+            buffer.clear()
+        }
+    }
     
     suspend fun startAcceptingConnections(serverSocket: BluetoothServerSocket, maxConnections: Int): Boolean {
         isRunning = true
@@ -120,9 +170,7 @@ class BluetoothService(
         connectedSockets.values.forEach { device ->
             device.write(message)
         }
-    }
-
-    fun stop() {
+    }    fun stop() {
         isRunning = false
         
         // Close all connected sockets
@@ -130,6 +178,9 @@ class BluetoothService(
             device.close()
         }
         connectedSockets.clear()
+        
+        // Clear message buffers
+        messageBuffers.clear()
     }
 
     private inner class ConnectedDevice(
@@ -147,10 +198,11 @@ class BluetoothService(
             } catch (e: IOException) {
                 Log.e(TAG, "Error getting socket streams", e)
             }
-        }
-
-        fun startCommunication() {
+        }        fun startCommunication() {
             isRunning = true
+            
+            // Create or get message buffer for this device
+            val messageBuffer = messageBuffers.getOrPut(deviceId) { MessageBuffer() }
             
             Thread {
                 val buffer = ByteArray(1024)
@@ -162,23 +214,41 @@ class BluetoothService(
                         bytes = inputStream?.read(buffer) ?: -1
                         
                         if (bytes > 0) {
-                            // Convert to string and process
-                            val receivedMessage = String(buffer, 0, bytes)
-                            messageHandler(receivedMessage, deviceId)
+                            // Convert to string
+                            val fragment = String(buffer, 0, bytes)
+                            Log.d(TAG, "Received fragment of ${fragment.length} bytes from $deviceId")
+                            
+                            // Add to buffer and check if we have a complete message
+                            val completeMessage = messageBuffer.appendFragment(fragment)
+                            
+                            if (completeMessage != null) {
+                                // We have a complete message
+                                Log.d(TAG, "Assembled complete message of ${completeMessage.length} bytes")
+                                messageHandler(completeMessage, deviceId)
+                            } else {
+                                // Check for stale messages that should be processed anyway
+                                val staleMessage = messageBuffer.getAndClearIfStale()
+                                if (staleMessage != null) {
+                                    Log.d(TAG, "Processing stale message of ${staleMessage.length} bytes (timeout)")
+                                    messageHandler(staleMessage, deviceId)
+                                }
+                            }
                         }
                     } catch (e: IOException) {
                         Log.e(TAG, "Connection lost", e)
                         isRunning = false
                         connectedSockets.remove(deviceId)
+                        messageBuffers.remove(deviceId) // Clean up the message buffer
                         break
                     }
                 }
             }.start()
-        }
-
-        fun write(message: String) {
+        }        fun write(message: String) {
             try {
-                outputStream?.write(message.toByteArray())
+                // Add delimiter to mark the end of the complete message
+                val messageWithDelimiter = message + MESSAGE_DELIMITER
+                Log.d(TAG, "Sending message of ${messageWithDelimiter.length} bytes to $deviceId")
+                outputStream?.write(messageWithDelimiter.toByteArray())
             } catch (e: IOException) {
                 Log.e(TAG, "Error sending data", e)
             }

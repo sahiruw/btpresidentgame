@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -35,7 +36,7 @@ class MainViewModel @Inject constructor(
         private val SERVICE_UUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66") // Unique UUID for our app
     }
 
-    private lateinit var bluetoothAdapter: BluetoothAdapter
+    private var bluetoothAdapter: BluetoothAdapter? = null
     private var discoveryReceiver: BroadcastReceiver? = null
     private var serverSocket: BluetoothServerSocket? = null
     private var isDiscovering = false
@@ -54,8 +55,21 @@ class MainViewModel @Inject constructor(
     val errorEvent: SharedFlow<String> = _errorEvent
 
     fun initializeBluetooth(adapter: BluetoothAdapter) {
+        Log.d(TAG, "Initializing Bluetooth adapter: ${adapter.name}, ${adapter.address}")
+        Log.d(TAG, "Adapter state: ${adapter.state}, enabled: ${adapter.isEnabled}, scanning: ${adapter.isDiscovering}")
+        Log.d(TAG, "Discoverable: ${adapter.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE}")
+        
         bluetoothAdapter = adapter
-        gameRepository.initializeBluetooth(adapter)
+        
+        try {
+            gameRepository.initializeBluetooth(adapter)
+            Log.d(TAG, "Bluetooth adapter successfully initialized in GameRepository")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize Bluetooth adapter in GameRepository", e)
+            viewModelScope.launch {
+                _errorEvent.emit("Failed to initialize Bluetooth: ${e.message}")
+            }
+        }
     }
 
     fun startHostingGame() {
@@ -80,9 +94,19 @@ class MainViewModel @Inject constructor(
         }
     }    fun startDiscovery() {
         Log.d(TAG, "Starting Bluetooth discovery")
+        
+        val bt = bluetoothAdapter
+        if (bt == null) {
+            Log.e(TAG, "Bluetooth adapter not initialized")
+            viewModelScope.launch {
+                _errorEvent.emit("Bluetooth adapter not initialized")
+            }
+            return
+        }
+        
         if (isDiscovering) {
             Log.d(TAG, "Discovery already in progress, canceling previous discovery")
-            bluetoothAdapter.cancelDiscovery()
+            bt.cancelDiscovery()
         }
         
         isDiscovering = true
@@ -91,7 +115,7 @@ class MainViewModel @Inject constructor(
         
         // First, add any already paired devices to the list
         try {
-            val pairedDevices = bluetoothAdapter.bondedDevices
+            val pairedDevices = bt.bondedDevices
             if (pairedDevices.isNotEmpty()) {
                 Log.d(TAG, "Found ${pairedDevices.size} paired devices")
                 for (device in pairedDevices) {
@@ -109,15 +133,14 @@ class MainViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error accessing paired devices", e)
         }
-        
-        if (discoveryReceiver == null) {
+          if (discoveryReceiver == null) {
             discoveryReceiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
                     Log.d(TAG, "Discovery receiver triggered: ${intent} context: $context")
                     when (intent.action) {
                         BluetoothDevice.ACTION_FOUND -> {
-                            // Use the newer API to avoid deprecation warning
-                            val device = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            // Use the newer API to avoid deprecation warning with proper null-safety
+                            val device: BluetoothDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                 intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
                             } else {
                                 @Suppress("DEPRECATION")
@@ -171,22 +194,29 @@ class MainViewModel @Inject constructor(
             context.registerReceiver(discoveryReceiver, filter)
         }
         
-        if (bluetoothAdapter.isDiscovering) {
-            bluetoothAdapter.cancelDiscovery()
+        if (bt.isDiscovering) {
+            bt.cancelDiscovery()
         }
         
-        bluetoothAdapter.startDiscovery()
-        Log.d(TAG, "Bluetooth discovery ended")
+        bt.startDiscovery()
+        Log.d(TAG, "Bluetooth discovery started")
     }
 
     fun connectToDevice(deviceAddress: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (bluetoothAdapter.isDiscovering) {
-                    bluetoothAdapter.cancelDiscovery()
+                val bt = bluetoothAdapter
+                if (bt == null) {
+                    Log.e(TAG, "Bluetooth adapter not initialized")
+                    _errorEvent.emit("Bluetooth adapter not initialized")
+                    return@launch
                 }
                 
-                val device = bluetoothAdapter.getRemoteDevice(deviceAddress)
+                if (bt.isDiscovering) {
+                    bt.cancelDiscovery()
+                }
+                
+                val device = bt.getRemoteDevice(deviceAddress)
                 val deviceName = device.name ?: "Unknown Device"
                 
                 gameRepository.initializeGameAsClient()
@@ -212,8 +242,10 @@ class MainViewModel @Inject constructor(
                     discoveryReceiver = null
                 }
                 
-                if (bluetoothAdapter.isDiscovering) {
-                    bluetoothAdapter.cancelDiscovery()
+                bluetoothAdapter?.let { bt ->
+                    if (bt.isDiscovering) {
+                        bt.cancelDiscovery()
+                    }
                 }
                 
                 serverSocket?.close()
@@ -224,18 +256,14 @@ class MainViewModel @Inject constructor(
                 Log.e(TAG, "Error during cleanup", e)
             }
         }
-    }    override fun onCleared() {
-        super.onCleared()
-        cleanup()
     }
     
-    // Helper function to convert bond state integer to readable string
     private fun getBondStateString(bondState: Int): String {
         return when (bondState) {
-            BluetoothDevice.BOND_NONE -> "NONE"
-            BluetoothDevice.BOND_BONDING -> "BONDING"
-            BluetoothDevice.BOND_BONDED -> "BONDED"
-            else -> "UNKNOWN"
+            BluetoothDevice.BOND_BONDED -> "Bonded"
+            BluetoothDevice.BOND_BONDING -> "Bonding"
+            BluetoothDevice.BOND_NONE -> "Not bonded"
+            else -> "Unknown bond state"
         }
     }
 }

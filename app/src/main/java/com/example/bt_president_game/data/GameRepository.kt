@@ -68,28 +68,34 @@ class GameRepository @Inject constructor() {
     val incomingMessages: SharedFlow<GameMessage> = _incomingMessages
 
     fun initializeGameAsHost() {
+        Log.d(TAG, "Initializing game as host")
+        
         if (bluetoothAdapter == null) {
+            Log.e(TAG, "BluetoothAdapter not initialized. Attempting to reinitialize.")
             throw IllegalStateException("BluetoothAdapter not initialized")
-        }        
+        }
+        
         _isHost.value = true
         _gameState.value = GameState.WAITING_FOR_PLAYERS
-        
-        // Log the Bluetooth adapter's discoverable state
-        val isDiscoverable = bluetoothAdapter?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE
-        Log.d(TAG, "Host's Bluetooth discoverable state: $isDiscoverable")
-        Log.d(TAG, "Host's device name: ${bluetoothAdapter?.name}, address: ${bluetoothAdapter?.address}")
         
         // Create a server socket and listen for connections
         // Using insecureRfcommWithServiceRecord makes it easier to connect without pairing
         serverSocket = bluetoothAdapter?.listenUsingInsecureRfcommWithServiceRecord("PresidentGame", SERVICE_UUID)
         if (serverSocket == null) {
+            Log.e(TAG, "Failed to create server socket")
             throw IOException("Could not create server socket")
         }
         Log.d(TAG, "Server socket created, waiting for connections...")
         
         // Initialize the BluetoothService if not already done
         if (bluetoothService == null) {
-            bluetoothService = BluetoothService(bluetoothAdapter!!, ::handleRawMessage)
+            Log.d(TAG, "Creating BluetoothService instance for host")
+            bluetoothAdapter?.let {
+                bluetoothService = BluetoothService(it, ::handleRawMessage)
+            } ?: run {
+                Log.e(TAG, "Cannot create BluetoothService - adapter is null")
+                throw IllegalStateException("BluetoothAdapter is null")
+            }
         }
         
         // Add self as the first player (host)
@@ -99,7 +105,10 @@ class GameRepository @Inject constructor() {
     }
 
     fun initializeGameAsClient() {
+        Log.d(TAG, "Initializing game as client")
+        
         if (bluetoothAdapter == null) {
+            Log.e(TAG, "BluetoothAdapter not initialized. Cannot initialize game as client.")
             throw IllegalStateException("BluetoothAdapter not initialized")
         }
         
@@ -108,7 +117,13 @@ class GameRepository @Inject constructor() {
         
         // Initialize the BluetoothService if not already done
         if (bluetoothService == null) {
-            bluetoothService = BluetoothService(bluetoothAdapter!!, ::handleRawMessage)
+            Log.d(TAG, "Creating BluetoothService instance for client")
+            bluetoothAdapter?.let {
+                bluetoothService = BluetoothService(it, ::handleRawMessage)
+            } ?: run {
+                Log.e(TAG, "Cannot create BluetoothService - adapter is null")
+                throw IllegalStateException("BluetoothAdapter is null")
+            }
         }
         
         // Add self as a player
@@ -118,14 +133,49 @@ class GameRepository @Inject constructor() {
     }
 
     suspend fun startHostingGame(): Boolean {
+        if (bluetoothAdapter == null) {
+            Log.e(TAG, "Cannot start hosting game - BluetoothAdapter is null")
+            return false
+        }
+        
+        if (bluetoothService == null) {
+            Log.e(TAG, "Cannot start hosting game - BluetoothService is null")
+            // Try to initialize it again
+            bluetoothAdapter?.let {
+                bluetoothService = BluetoothService(it, ::handleRawMessage)
+            } ?: run {
+                return false
+            }
+        }
+        
         serverSocket?.let { socket ->
+            Log.d(TAG, "Starting to accept connections on server socket")
             return bluetoothService?.startAcceptingConnections(socket, MAX_PLAYERS - 1) ?: false
         }
+        
+        Log.e(TAG, "Cannot start hosting game - serverSocket is null")
         return false
     }
 
     suspend fun connectToGame(device: BluetoothDevice): Boolean {
+        if (bluetoothAdapter == null) {
+            Log.e(TAG, "Cannot connect to game - BluetoothAdapter is null")
+            return false
+        }
+        
+        if (bluetoothService == null) {
+            Log.e(TAG, "Cannot connect to game - BluetoothService is null")
+            // Try to initialize it again
+            bluetoothAdapter?.let {
+                bluetoothService = BluetoothService(it, ::handleRawMessage)
+            } ?: run {
+                return false
+            }
+        }
+        
         _gameState.value = GameState.CONNECTING
+        
+        Log.d(TAG, "Connecting to game hosted by ${device.name} (${device.address})")
         val connected = bluetoothService?.connectToServer(device, SERVICE_UUID) ?: false
         
         if (connected) {
@@ -324,15 +374,20 @@ class GameRepository @Inject constructor() {
         val serializedMessage = serializeMessage(message)
         bluetoothService?.sendMessageToAll(serializedMessage)
     }
-    
-    private fun handleRawMessage(rawMessage: String, senderId: String) {
+      private fun handleRawMessage(rawMessage: String, senderId: String) {
         try {
+            Log.d(TAG, "Received complete message of ${rawMessage.length} bytes from $senderId")
+            
+            // Try to deserialize and process
             val gameMessage = deserializeMessage(rawMessage)
             if (gameMessage != null) {
+                Log.d(TAG, "Successfully deserialized message type: ${gameMessage.javaClass.simpleName}")
                 processGameMessage(gameMessage, senderId)
+            } else {
+                Log.e(TAG, "Failed to deserialize message - null result")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error processing message", e)
+            Log.e(TAG, "Error processing message: ${e.message}", e)
         }
     }
     
@@ -410,22 +465,26 @@ class GameRepository @Inject constructor() {
                 _connectedPlayers.value = message.players
             }
         }
-    }
-
-    // Serialization and deserialization methods
+    }    // Serialization and deserialization methods
     private fun serializeMessage(message: GameMessage): String {
-        Log.d(TAG, "Serializing message: ${message}")
+        Log.d(TAG, "Serializing message: ${message.javaClass.simpleName}")
         try {
             val byteArrayOutputStream = ByteArrayOutputStream()
             val objectOutputStream = ObjectOutputStream(byteArrayOutputStream)
             objectOutputStream.writeObject(message)
             objectOutputStream.flush()
             
+            val rawBytes = byteArrayOutputStream.toByteArray()
+            Log.d(TAG, "Serialized message size: ${rawBytes.size} bytes")
+            
             // Convert to Base64 string for safe transmission
-            return android.util.Base64.encodeToString(
-                byteArrayOutputStream.toByteArray(),
-                android.util.Base64.DEFAULT
+            val base64String = android.util.Base64.encodeToString(
+                rawBytes,
+                android.util.Base64.NO_WRAP // Use NO_WRAP to avoid newlines in the encoded string
             )
+            
+            Log.d(TAG, "Base64 encoded message size: ${base64String.length} characters")
+            return base64String
         } catch (e: Exception) {
             Log.e(TAG, "Error serializing message", e)
             return ""
@@ -433,15 +492,35 @@ class GameRepository @Inject constructor() {
     }
     
     private fun deserializeMessage(serializedMessage: String): GameMessage? {
-        Log.d(TAG, "Raw incoming message (truncated): ${serializedMessage}")
+        Log.d(TAG, "Deserializing message of length: ${serializedMessage.length}")
         
         try {
-            val bytes = android.util.Base64.decode(serializedMessage, android.util.Base64.DEFAULT)
+            // First, validate the Base64 string
+            if (serializedMessage.isEmpty()) {
+                Log.e(TAG, "Empty message received")
+                return null
+            }
+            
+            // Decode the Base64 string to bytes
+            val bytes = android.util.Base64.decode(serializedMessage, android.util.Base64.NO_WRAP)
+            Log.d(TAG, "Decoded byte array length: ${bytes.size}")
+            
+            // Create input streams
             val byteArrayInputStream = ByteArrayInputStream(bytes)
             val objectInputStream = ObjectInputStream(byteArrayInputStream)
-            return objectInputStream.readObject() as GameMessage
+            
+            // Read and cast the object
+            val result = objectInputStream.readObject() as? GameMessage
+            
+            if (result == null) {
+                Log.e(TAG, "Deserialized object is not a GameMessage")
+            } else {
+                Log.d(TAG, "Successfully deserialized to ${result.javaClass.simpleName}")
+            }
+            
+            return result
         } catch (e: Exception) {
-            Log.e(TAG, "Error deserializing message", e)
+            Log.e(TAG, "Error deserializing message: ${e.javaClass.simpleName}: ${e.message}")
             return null
         }
     }
@@ -477,6 +556,14 @@ class GameRepository @Inject constructor() {
         Log.d(TAG, "- Scanning: ${adapter.isDiscovering}")
         Log.d(TAG, "- Enabled: ${adapter.isEnabled}")
         Log.d(TAG, "- Discovery allowed: ${adapter.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE}")
+        
+        // Initialize BluetoothService right away to avoid null issues
+        if (bluetoothService == null) {
+            Log.d(TAG, "Creating BluetoothService instance")
+            bluetoothService = BluetoothService(adapter, ::handleRawMessage)
+        } else {
+            Log.d(TAG, "BluetoothService already initialized")
+        }
         
         // Get paired devices and log them
         try {

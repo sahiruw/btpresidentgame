@@ -168,10 +168,19 @@ class MainActivity : AppCompatActivity() {
     
     private fun setupBluetoothFunctionality() {
         Log.d("MainActivity", "Setting up Bluetooth functionality")
-        Log.d("MainActivity", "Bluetooth adapter name: ${bluetoothAdapter?.name}, address: ${bluetoothAdapter?.address}")
-        Log.d("MainActivity", "Discoverable: ${bluetoothAdapter?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE}")
         
-        viewModel.initializeBluetooth(bluetoothAdapter!!)
+        val adapter = bluetoothAdapter
+        if (adapter == null) {
+            Log.e("MainActivity", "Bluetooth adapter is null")
+            Toast.makeText(this, "This device doesn't support Bluetooth", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+        
+        Log.d("MainActivity", "Bluetooth adapter name: ${adapter.name}, address: ${adapter.address}")
+        Log.d("MainActivity", "Discoverable: ${adapter.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE}")
+        
+        viewModel.initializeBluetooth(adapter)
     }
     
     private fun observeViewModel() {
