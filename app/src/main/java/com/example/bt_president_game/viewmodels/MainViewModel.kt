@@ -62,14 +62,16 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 gameRepository.initializeGameAsHost()
-                
+                Log.d(TAG, "Game initializing as host")
                 // Start accepting connections in the background
                 val success = gameRepository.startHostingGame()
+                Log.d(TAG, "Game hosting started. Status: $success")
                 if (success) {
                     Log.d(TAG, "Hosting game started successfully")
                     _gameCreatedEvent.emit(Unit)
                 } else {
                     _errorEvent.emit("Failed to start hosting game")
+                    Log.e(TAG, "Failed to start hosting game")
                 }
             } catch (e: IOException) {
                 _errorEvent.emit("Failed to create game: ${e.message}")
@@ -79,10 +81,12 @@ class MainViewModel @Inject constructor(
     }
 
     fun startDiscovery() {
+        Log.d(TAG, "Starting Bluetooth discovery 0")
         if (isDiscovering) return
         
         isDiscovering = true
         discoveredDevices.clear()
+        Log.d(TAG, "Starting Bluetooth discovery")
         
         if (discoveryReceiver == null) {
             discoveryReceiver = object : BroadcastReceiver() {
@@ -129,6 +133,7 @@ class MainViewModel @Inject constructor(
         }
         
         bluetoothAdapter.startDiscovery()
+        Log.d(TAG, "Bluetooth discovery ended")
     }
 
     fun connectToDevice(deviceAddress: String) {

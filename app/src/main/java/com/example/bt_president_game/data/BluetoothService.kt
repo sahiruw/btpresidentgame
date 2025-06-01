@@ -33,9 +33,11 @@ class BluetoothService(
                 var connectionCount = 0
                 
                 while (isRunning && connectionCount < maxConnections) {
-                    try {
+                    try {                        
+                        Log.d(TAG, "Waiting for incoming connections...")
                         // This call will block until a connection is accepted or an exception occurs
-                        val socket = serverSocket.accept()
+                        // Use accept(timeout) to prevent infinite blocking
+                        val socket = serverSocket.accept(30000) // 30 seconds timeout
                         
                         val deviceId = socket.remoteDevice.address
                         val connectedDevice = ConnectedDevice(socket, deviceId)
@@ -45,6 +47,7 @@ class BluetoothService(
                         connectedDevice.startCommunication()
                         connectionCount++
                         
+                        Log.d(TAG, "Accepted connection from $deviceId")
                         // Send current players list to the new client
                         // sendPlayersList(deviceId)
                         
