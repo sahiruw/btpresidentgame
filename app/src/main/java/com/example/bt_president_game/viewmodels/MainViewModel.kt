@@ -66,6 +66,7 @@ class MainViewModel @Inject constructor(
                 // Start accepting connections in the background
                 val success = gameRepository.startHostingGame()
                 if (success) {
+                    Log.d(TAG, "Hosting game started successfully")
                     _gameCreatedEvent.emit(Unit)
                 } else {
                     _errorEvent.emit("Failed to start hosting game")
