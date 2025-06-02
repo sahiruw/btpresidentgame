@@ -37,19 +37,24 @@ class BluetoothService(
         
         // Add fragment to buffer and return complete message if available
         @Synchronized
-        fun appendFragment(fragment: String): String? {
+        fun appendFragment(fragment: String): List<String>? {
             lastUpdateTime = System.currentTimeMillis()
             buffer.append(fragment)
-            
-            // Check if this fragment completes a message
+
             if (buffer.contains(MESSAGE_DELIMITER)) {
-                val completeMessage = buffer.toString()
-                buffer.clear() // Reset buffer after processing
-                return completeMessage.replace(MESSAGE_DELIMITER, "")
+                val messages = buffer.toString().split(MESSAGE_DELIMITER)
+                
+                // The last element might be an incomplete message fragment, keep it in the buffer
+                buffer.clear()
+                buffer.append(messages.last())
+
+                // Return all complete messages (without the delimiter)
+                return messages.dropLast(1).filter { it.isNotEmpty() }
             }
-            
+
             return null
         }
+
         
         // Check if buffer is stale and should be processed anyway
         @Synchronized
@@ -199,7 +204,9 @@ class BluetoothService(
             } catch (e: IOException) {
                 Log.e(TAG, "Error getting socket streams", e)
             }
-        }        fun startCommunication() {
+        }        
+        
+        fun startCommunication() {
             isRunning = true
             
             // Create or get message buffer for this device
@@ -217,17 +224,20 @@ class BluetoothService(
                         if (bytes > 0) {
                             // Convert to string
                             val fragment = String(buffer, 0, bytes)
-                            Log.d(TAG, "Received fragment of ${fragment.length} bytes from $deviceId")
+                            Log.d(TAG, "Received fragment of ${fragment.length} bytes from $deviceId $fragment")
                             
                             // Add to buffer and check if we have a complete message
-                            val completeMessage = messageBuffer.appendFragment(fragment)
+                            val completeMessages = messageBuffer.appendFragment(fragment)
                             
-                            if (completeMessage != null) {
-                                // We have a complete message
-                                Log.d(TAG, "Assembled complete message of ${completeMessage.length} bytes")
-                                messageHandler(completeMessage, deviceId)
+                            
+                            if (completeMessages != null && completeMessages.isNotEmpty()) {
+                                // We have one or more complete messages
+                                for (completeMessage in completeMessages) {
+                                    Log.d(TAG, "Assembled complete message of ${completeMessage.length} bytes")
+                                    messageHandler(completeMessage, deviceId)
+                                }
                             } else {
-                                // Check for stale messages that should be processed anyway
+                                                            // Check for stale messages that should be processed anyway
                                 val staleMessage = messageBuffer.getAndClearIfStale()
                                 if (staleMessage != null) {
                                     Log.d(TAG, "Processing stale message of ${staleMessage.length} bytes (timeout)")
@@ -250,7 +260,7 @@ class BluetoothService(
             try {
                 // Add delimiter to mark the end of the complete message
                 val messageWithDelimiter = message + MESSAGE_DELIMITER
-                Log.d(TAG, "Sending message of ${messageWithDelimiter.length} bytes to $deviceId")
+                Log.d(TAG, "Sending message of ${messageWithDelimiter.length} bytes to $deviceId $messageWithDelimiter")
                 outputStream?.write(messageWithDelimiter.toByteArray(Charsets.UTF_8))
 
             } catch (e: IOException) {
