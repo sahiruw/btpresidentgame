@@ -19,7 +19,7 @@ sealed class GameMessage : Serializable {
     data class UpdateTurn(val playerId: String) : GameMessage()
     
     // Message sent when cards are played
-    data class CardsPlayed(val playedCards: PlayedCards) : GameMessage()
+    data class CardsPlayed(val playedCards: PlayedCards, val remainingCardCount: Int) : GameMessage()
     
     // Message sent when a player passes their turn
     data class PlayerPassed(val playerId: String) : GameMessage()
@@ -33,6 +33,9 @@ sealed class GameMessage : Serializable {
     // Message to request the game state (sent by players who join mid-game)
     object RequestGameState : GameMessage()
     
+    // Message sent to update all players about current card counts
+    data class UpdateCardCounts(val cardCounts: Map<String, Int>) : GameMessage()
+    
     // Message to communicate game state to new players
     data class GameState(
         val currentState: com.example.bt_president_game.model.GameState,
@@ -40,6 +43,7 @@ sealed class GameMessage : Serializable {
         val currentPlay: PlayedCards?,
         val currentPlayerId: String?,
         val nextPlayerId: String?,
-        val finishedPlayers: List<String>
+        val finishedPlayers: List<String>,
+        val playerCardCounts: Map<String, Int>
     ) : GameMessage()
 }

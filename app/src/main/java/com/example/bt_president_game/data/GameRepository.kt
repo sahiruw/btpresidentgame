@@ -63,6 +63,10 @@ class GameRepository @Inject constructor() {
     private val _finishedPlayers = MutableStateFlow<List<String>>(emptyList())
     val finishedPlayers: StateFlow<List<String>> = _finishedPlayers
     
+    // Track card counts for all players
+    private val _playerCardCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val playerCardCounts: StateFlow<Map<String, Int>> = _playerCardCounts
+    
     // Message flow for incoming game messages
     private val _incomingMessages = MutableSharedFlow<GameMessage>()
     val incomingMessages: SharedFlow<GameMessage> = _incomingMessages
@@ -261,6 +265,9 @@ class GameRepository @Inject constructor() {
         // Update game state
         _gameState.value = GameState.PLAYING
         _currentPlayerId.value = firstPlayerId
+          // Initialize card counts for all players
+        val initialCardCounts = playerCards.mapValues { (_, cards) -> cards.size }
+        _playerCardCounts.value = initialCardCounts
         
         // Create game state update for all players
         val gameStateMessage = GameMessage.GameState(
@@ -269,7 +276,8 @@ class GameRepository @Inject constructor() {
             currentPlay = null,
             currentPlayerId = firstPlayerId,
             nextPlayerId = null,
-            finishedPlayers = emptyList()
+            finishedPlayers = emptyList(),
+            playerCardCounts = initialCardCounts
         )
         
         // Send game state update to all players
@@ -288,9 +296,7 @@ class GameRepository @Inject constructor() {
         }
         
         return deck
-    }
-
-    fun playCards(playedCards: PlayedCards) {
+    }    fun playCards(playedCards: PlayedCards) {
         // Remove played cards from my hand
         val currentCards = _myCards.value.toMutableList()
         currentCards.removeAll(playedCards.cards)
@@ -299,8 +305,13 @@ class GameRepository @Inject constructor() {
         // Update current play
         _currentPlay.value = playedCards
         
+        // Update my card count in the tracking map
+        val currentCardCounts = _playerCardCounts.value.toMutableMap()
+        currentCardCounts[playerId] = currentCards.size
+        _playerCardCounts.value = currentCardCounts
+        
         // Send cards played message to all players
-        val message = GameMessage.CardsPlayed(playedCards)
+        val message = GameMessage.CardsPlayed(playedCards, currentCards.size)
         val serializedMessage = serializeMessage(message)
         bluetoothService?.sendMessageToAll(serializedMessage)
         
@@ -352,11 +363,33 @@ class GameRepository @Inject constructor() {
         // If we get here, all players have finished
         endGame()
     }
-    
-    private fun checkForRoundEnd() {
-        // Logic to check if a round is over (everyone else has passed)
-        // If so, reset the table and let the last player who played start again
-        // This is simplified for now
+      private fun checkForRoundEnd() {
+        // Check if everyone has passed except the current player
+        val players = _connectedPlayers.value
+        val activePlayerCount = players.size - _finishedPlayers.value.size
+        
+        if (activePlayerCount <= 1) {
+            // Only one player left, they win this round
+            return
+        }
+        
+        // Get the player who most recently played cards
+        val lastPlayerToPlay = _currentPlay.value?.playerId
+        
+        if (lastPlayerToPlay != null && lastPlayerToPlay == _currentPlayerId.value) {
+            // The current player is the one who played the last cards
+            // and turn has come back to them - everyone else has passed
+            
+            // Reset the table
+            _currentPlay.value = null
+            
+            // Send reset table message
+            val resetMessage = GameMessage.ResetTable
+            val serializedMessage = serializeMessage(resetMessage)
+            bluetoothService?.sendMessageToAll(serializedMessage)
+            
+            Log.d(TAG, "Round ended, table reset. Current player gets another turn: $lastPlayerToPlay")
+        }
     }
     
     fun playerFinished() {
@@ -424,6 +457,7 @@ class GameRepository @Inject constructor() {
                 if (!currentPlayers.any { it.id == newPlayer.id }) {
                     currentPlayers.add(newPlayer)
                     _connectedPlayers.value = currentPlayers
+                    Log.d(TAG, "Updated connected players: ${_connectedPlayers.value.map { it.name }}")
                 }
             }
             
@@ -434,12 +468,16 @@ class GameRepository @Inject constructor() {
                 _currentPlayerId.value = message.firstPlayerId
             }
             
-            is GameMessage.CardsPlayed -> {
-                _currentPlay.value = message.playedCards
+            is GameMessage.CardsPlayed -> {                _currentPlay.value = message.playedCards
+                
+                // Update card count for the player who played cards
+                val currentCardCounts = _playerCardCounts.value.toMutableMap()
+                currentCardCounts[message.playedCards.playerId] = message.remainingCardCount
+                _playerCardCounts.value = currentCardCounts
             }
-            
-            is GameMessage.PlayerPassed -> {
-                // Nothing to do here, next player determination is done on host side
+              is GameMessage.PlayerPassed -> {
+                // For tracking purposes, add the player who passed to a temporary tracking set
+                Log.d(TAG, "Player ${message.playerId} passed their turn")
             }
             
             is GameMessage.UpdateTurn -> {
@@ -456,28 +494,33 @@ class GameRepository @Inject constructor() {
             }
               is GameMessage.RequestGameState -> {
                 if (_isHost.value) {
-                    // Send current game state to the requesting player
+                    // Send current game state to the requesting player                    
                     val currentState = GameMessage.GameState(
                         currentState = _gameState.value,
                         players = _connectedPlayers.value,
                         currentPlay = _currentPlay.value,
                         currentPlayerId = _currentPlayerId.value,
                         nextPlayerId = null, // Not used in this context
-                        finishedPlayers = _finishedPlayers.value
+                        finishedPlayers = _finishedPlayers.value,
+                        playerCardCounts = _playerCardCounts.value
                     )
                     
                     val serializedMessage = serializeMessage(currentState)
                     bluetoothService?.sendMessage(serializedMessage, senderId)
                 }
             }
-            
-            is GameMessage.GameState -> {
+              is GameMessage.GameState -> {
                 // Update local game state based on received state
                 _gameState.value = message.currentState
                 _connectedPlayers.value = message.players
                 _currentPlay.value = message.currentPlay
                 _currentPlayerId.value = message.currentPlayerId
                 _finishedPlayers.value = message.finishedPlayers
+                _playerCardCounts.value = message.playerCardCounts
+            }
+            
+            is GameMessage.UpdateCardCounts -> {
+                _playerCardCounts.value = message.cardCounts
             }
             
             is GameMessage.PlayerLeft -> {
@@ -530,6 +573,7 @@ class GameRepository @Inject constructor() {
             // Decode the Base64 string to bytes
             val bytes = android.util.Base64.decode(serializedMessage, android.util.Base64.NO_WRAP)
             Log.d(TAG, "Decoded byte array length: ${bytes.size}")
+            Log.d(TAG, "Decoded byte array content: ${bytes.joinToString(", ") { it.toString() }}")
             
             // Create input streams
             val byteArrayInputStream = ByteArrayInputStream(bytes)

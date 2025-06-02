@@ -244,7 +244,9 @@ class BluetoothService(
                     }
                 }
             }.start()
-        }        fun write(message: String) {
+        }        
+        
+        fun write(message: String) {
             try {
                 // Add delimiter to mark the end of the complete message
                 val messageWithDelimiter = message + MESSAGE_DELIMITER

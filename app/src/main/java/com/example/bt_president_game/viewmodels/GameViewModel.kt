@@ -7,6 +7,7 @@ import com.example.bt_president_game.data.BluetoothService
 import com.example.bt_president_game.data.GameRepository
 import com.example.bt_president_game.model.Card
 import com.example.bt_president_game.model.GameMessage
+import com.example.bt_president_game.model.GameState as ModelGameState
 import com.example.bt_president_game.model.Player
 import com.example.bt_president_game.model.PlayedCards
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -44,7 +45,8 @@ class GameViewModel @Inject constructor(
         val currentPlay: PlayedCards? = null,
         val currentPlayerId: String? = null,
         val gameEnded: Boolean = false,
-        val playersFinishOrder: List<String> = emptyList()
+        val playersFinishOrder: List<String> = emptyList(),
+        val playerCardCounts: Map<String, Int> = emptyMap()
     )
 
     fun initializeAsHost() {
@@ -62,6 +64,61 @@ class GameViewModel @Inject constructor(
                 launch {
                     gameRepository.connectedPlayers.collect { players ->
                         _gameState.value = _gameState.value.copy(players = players)
+                    }
+                }
+                  // Add collector for my cards
+                launch {
+                    gameRepository.myCards.collect { cards ->
+                        Log.d(TAG, "Host received cards: ${cards.size}")
+                        if (cards.isNotEmpty()) {
+                            Log.d(TAG, "Cards: ${cards.joinToString { "${it.rank.symbol}${it.suit}" }}")
+                        }
+                        _gameState.value = _gameState.value.copy(myCards = cards)
+                    }
+                }
+                
+                // Add collector for current play
+                launch {
+                    gameRepository.currentPlay.collect { playedCards ->
+                        _gameState.value = _gameState.value.copy(currentPlay = playedCards)
+                    }
+                }
+                
+                // Add collector for current player ID
+                launch {
+                    gameRepository.currentPlayerId.collect { playerId ->
+                        _gameState.value = _gameState.value.copy(
+                            currentPlayerId = playerId,
+                            isMyTurn = playerId == gameRepository.getPlayerId()
+                        )
+                    }
+                }
+                
+                // Add collector for game state
+                launch {
+                    gameRepository.gameState.collect { state ->
+                        _gameState.value = _gameState.value.copy(
+                            gameStarted = state == ModelGameState.PLAYING || state == ModelGameState.DEALING_CARDS,
+                            gameEnded = state == ModelGameState.GAME_OVER
+                        )
+                    }
+                }
+                
+                // Add collector for finished players
+                launch {
+                    gameRepository.finishedPlayers.collect { finishedPlayers ->
+                        _gameState.value = _gameState.value.copy(
+                            playersFinishOrder = finishedPlayers
+                        )
+                    }
+                }
+
+                // Add collector for player card counts
+                launch {
+                    gameRepository.playerCardCounts.collect { cardCounts ->
+                        _gameState.value = _gameState.value.copy(
+                            playerCardCounts = cardCounts
+                        )
                     }
                 }
 
@@ -89,6 +146,61 @@ class GameViewModel @Inject constructor(
                         _gameState.value = _gameState.value.copy(players = players)
                     }
                 }
+                  // Add collector for my cards
+                launch {
+                    gameRepository.myCards.collect { cards ->
+                        Log.d(TAG, "Client received cards: ${cards.size}")
+                        if (cards.isNotEmpty()) {
+                            Log.d(TAG, "Cards: ${cards.joinToString { "${it.rank.symbol}${it.suit}" }}")
+                        }
+                        _gameState.value = _gameState.value.copy(myCards = cards)
+                    }
+                }
+                
+                // Add collector for current play
+                launch {
+                    gameRepository.currentPlay.collect { playedCards ->
+                        _gameState.value = _gameState.value.copy(currentPlay = playedCards)
+                    }
+                }
+                
+                // Add collector for current player ID
+                launch {
+                    gameRepository.currentPlayerId.collect { playerId ->
+                        _gameState.value = _gameState.value.copy(
+                            currentPlayerId = playerId,
+                            isMyTurn = playerId == gameRepository.getPlayerId()
+                        )
+                    }
+                }
+                
+                // Add collector for game state
+                launch {
+                    gameRepository.gameState.collect { state ->
+                        _gameState.value = _gameState.value.copy(
+                            gameStarted = state == ModelGameState.PLAYING || state == ModelGameState.DEALING_CARDS,
+                            gameEnded = state == ModelGameState.GAME_OVER
+                        )
+                    }
+                }
+                
+                // Add collector for finished players
+                launch {
+                    gameRepository.finishedPlayers.collect { finishedPlayers ->
+                        _gameState.value = _gameState.value.copy(
+                            playersFinishOrder = finishedPlayers
+                        )
+                    }
+                }
+                
+                // Add collector for player card counts
+                launch {
+                    gameRepository.playerCardCounts.collect { cardCounts ->
+                        _gameState.value = _gameState.value.copy(
+                            playerCardCounts = cardCounts
+                        )
+                    }
+                }
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing game as client", e)
@@ -114,20 +226,28 @@ class GameViewModel @Inject constructor(
                 _errorEvent.emit("Failed to start game: ${e.message}")
             }
         }
-    }
-
-    fun selectCard(card: Card) {
+    }    fun selectCard(card: Card) {
+        Log.d(TAG, "Card selected: ${card.rank.symbol}${card.suit}")
+        
         if (selectedCards.contains(card)) {
             selectedCards.remove(card)
+            Log.d(TAG, "Card removed from selection. Selected count: ${selectedCards.size}")
         } else {
             // Check if the card has the same value as already selected cards
             if (selectedCards.isEmpty() || selectedCards[0].value == card.value) {
                 selectedCards.add(card)
+                Log.d(TAG, "Card added to selection. Selected count: ${selectedCards.size}")
             } else {
-                viewModelScope.launch {
-                    _errorEvent.emit("You can only select cards of the same value")
-                }
+                // If selecting a different value, clear previous selection and add this one
+                selectedCards.clear()
+                selectedCards.add(card)
+                Log.d(TAG, "Previous selection cleared, new card selected")
             }
+        }
+        
+        // Notify UI of selection change
+        viewModelScope.launch {
+            _gameState.value = _gameState.value.copy()  // Trigger UI update with same state
         }
     }
 
@@ -205,13 +325,13 @@ class GameViewModel @Inject constructor(
 
     private fun processIncomingMessage(message: GameMessage) {
         viewModelScope.launch {
-            when (message) {
-                is GameMessage.GameStarted -> {
+            when (message) {                is GameMessage.GameStarted -> {
+                    // Only update the turn information here since myCards will be updated via flow
                     _gameState.value = _gameState.value.copy(
                         gameStarted = true,
-                        myCards = message.cards,
                         isMyTurn = message.firstPlayerId == gameRepository.getPlayerId()
                     )
+                    Log.d(TAG, "Game started message received. First player: ${message.firstPlayerId}, My ID: ${gameRepository.getPlayerId()}")
                 }
                 
                 is GameMessage.UpdatePlayers -> {
@@ -225,11 +345,15 @@ class GameViewModel @Inject constructor(
                         isMyTurn = message.playerId == gameRepository.getPlayerId()
                     )
                 }
-                
-                is GameMessage.CardsPlayed -> {
+                  is GameMessage.CardsPlayed -> {
+                    // Update current play and card counts
+                    val updatedCardCounts = _gameState.value.playerCardCounts.toMutableMap()
+                    updatedCardCounts[message.playedCards.playerId] = message.remainingCardCount
+                    
                     _gameState.value = _gameState.value.copy(
                         currentPlay = message.playedCards,
-                        currentPlayerId = message.playedCards.playerId
+                        currentPlayerId = message.playedCards.playerId,
+                        playerCardCounts = updatedCardCounts
                     )
                 }
                 
@@ -244,12 +368,11 @@ class GameViewModel @Inject constructor(
                         playersFinishOrder = message.playerRanking
                     )
                 }
-                
-                is GameMessage.ResetTable -> {
+                  is GameMessage.ResetTable -> {
                     _gameState.value = _gameState.value.copy(
-                        currentPlay = null,
-                        currentPlayerId = null
+                        currentPlay = null
                     )
+                    Log.d(TAG, "Table reset received - new round starting")
                 }
                 
                 else -> {
@@ -259,12 +382,20 @@ class GameViewModel @Inject constructor(
         }
     }
 
+    fun getPlayerId(): String {
+        return gameRepository.getPlayerId()
+    }
+    
     fun isCardSelected(card: Card): Boolean {
         return selectedCards.contains(card)
     }
+
+    fun hasSelectedCards(): Boolean {
+        return selectedCards.isNotEmpty()
+    }
     
-    fun getPlayerId(): String {
-        return gameRepository.getPlayerId()
+    fun getSelectedCardCount(): Int {
+        return selectedCards.size
     }
 
     fun cleanup() {
