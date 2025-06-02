@@ -104,7 +104,7 @@ class GameRepository @Inject constructor() {
         
         // Add self as the first player (host)
         val hostName = bluetoothAdapter?.name ?: "Host"
-        val hostPlayer = Player(id = playerId, name = hostName, isHost = true)
+        val hostPlayer = Player(id = playerId, name = hostName, isHost = true, address = bluetoothAdapter?.address ?: "unknown")
         _connectedPlayers.value = listOf(hostPlayer)
     }
 
@@ -132,7 +132,7 @@ class GameRepository @Inject constructor() {
         
         // Add self as a player
         val playerName = bluetoothAdapter?.name ?: "Player"
-        val player = Player(id = playerId, name = playerName, isHost = false)
+        val player = Player(id = playerId, name = playerName, isHost = false, address = bluetoothAdapter?.address ?: "unknown")
         _connectedPlayers.value = listOf(player)
     }
 
@@ -186,7 +186,7 @@ class GameRepository @Inject constructor() {
             _gameState.value = GameState.WAITING_FOR_PLAYERS
 
             // Send PlayerJoined message to the host
-            val player = Player(id = bluetoothAdapter?.address ?: "unknown", name = bluetoothAdapter?.name ?: "Player", isHost = false)
+            val player = Player(id = playerId, name = bluetoothAdapter?.name ?: "Player", isHost = false, address = device.address)
             val joinMessage = GameMessage.PlayerJoined(player)
             val serializedMessage = serializeMessage(joinMessage)
             bluetoothService?.sendMessage(serializedMessage, device.address)
@@ -239,12 +239,12 @@ class GameRepository @Inject constructor() {
         
         // Determine who goes first (player with 3 of clubs)
         var firstPlayerId = players.first().id
-        for ((id, cards) in playerCards) {
-            if (cards.any { card -> card.suit == Suit.CLUBS && card.rank == Rank.THREE }) {
-                firstPlayerId = id
-                break
-            }
-        }
+        // for ((id, cards) in playerCards) {
+        //     if (cards.any { card -> card.suit == Suit.CLUBS && card.rank == Rank.THREE }) {
+        //         firstPlayerId = id
+        //         break
+        //     }
+        // }
         
         // Send start game message to all players
         for (player in players) {
@@ -255,7 +255,7 @@ class GameRepository @Inject constructor() {
 
                 val startMessage = GameMessage.GameStarted(cards, firstPlayerId)
                 val serializedMessage = serializeMessage(startMessage)
-                bluetoothService?.sendMessage(serializedMessage, player.id)
+                bluetoothService?.sendMessage(serializedMessage, player.address)
             }
             else {
                 _myCards.value = playerCards[player.id] ?: emptyList()
@@ -296,7 +296,9 @@ class GameRepository @Inject constructor() {
         }
         
         return deck
-    }    fun playCards(playedCards: PlayedCards) {
+    }    
+    
+    fun playCards(playedCards: PlayedCards) {
         // Remove played cards from my hand
         val currentCards = _myCards.value.toMutableList()
         currentCards.removeAll(playedCards.cards)
@@ -425,7 +427,9 @@ class GameRepository @Inject constructor() {
         val serializedMessage = serializeMessage(message)
         bluetoothService?.sendMessageToAll(serializedMessage)
     }
-      private fun handleRawMessage(rawMessage: String, senderId: String) {
+      
+    
+    private fun handleRawMessage(rawMessage: String, senderId: String) {
         try {
             Log.d(TAG, "Received complete message of ${rawMessage.length} bytes from $senderId")
             
@@ -449,7 +453,7 @@ class GameRepository @Inject constructor() {
         when (message) {
             is GameMessage.PlayerJoined -> {
                 val originalPlayer = message.player
-                val newPlayer = originalPlayer.copy(id = senderId) // Create a new Player with updated id
+                val newPlayer = originalPlayer.copy(address = senderId) // Create a new Player with updated id
                 Log.d(TAG, "Player joined: ${newPlayer.name} (${newPlayer.id})")
                 
                 // Add the new player to connected players
@@ -492,7 +496,8 @@ class GameRepository @Inject constructor() {
             is GameMessage.ResetTable -> {
                 _currentPlay.value = null
             }
-              is GameMessage.RequestGameState -> {
+              
+            is GameMessage.RequestGameState -> {
                 if (_isHost.value) {
                     // Send current game state to the requesting player                    
                     val currentState = GameMessage.GameState(
@@ -509,7 +514,8 @@ class GameRepository @Inject constructor() {
                     bluetoothService?.sendMessage(serializedMessage, senderId)
                 }
             }
-              is GameMessage.GameState -> {
+              
+            is GameMessage.GameState -> {
                 // Update local game state based on received state
                 _gameState.value = message.currentState
                 _connectedPlayers.value = message.players

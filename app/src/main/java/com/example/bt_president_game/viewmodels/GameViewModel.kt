@@ -91,6 +91,7 @@ class GameViewModel @Inject constructor(
                             currentPlayerId = playerId,
                             isMyTurn = playerId == gameRepository.getPlayerId()
                         )
+                        Log.d(TAG, "Current player ID updated: $playerId, My ID: ${gameRepository.getPlayerId()} is my turn: ${_gameState.value.isMyTurn}")
                     }
                 }
                 
@@ -391,6 +392,7 @@ class GameViewModel @Inject constructor(
     }
 
     fun hasSelectedCards(): Boolean {
+        Log.d(TAG, "Checking if any cards are selected: ${selectedCards} selected")
         return selectedCards.isNotEmpty()
     }
     

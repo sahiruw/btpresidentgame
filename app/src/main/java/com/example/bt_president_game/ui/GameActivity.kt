@@ -165,7 +165,7 @@ class GameActivity : AppCompatActivity() {
             binding.layoutGameControls.visibility = View.VISIBLE
             binding.buttonStartGame.visibility = View.GONE
               // Enable/disable play button based on turn and card selection
-            binding.buttonPlay.isEnabled = gameState.isMyTurn && viewModel.hasSelectedCards()
+            binding.buttonPlay.isEnabled = gameState.isMyTurn
             binding.buttonPass.isEnabled = gameState.isMyTurn && gameState.currentPlay != null
             
             // Update the UI based on whether it's the player's turn            
