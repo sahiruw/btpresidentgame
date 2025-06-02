@@ -1,6 +1,7 @@
 package com.example.bt_president_game.ui
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.activity.viewModels
@@ -111,6 +112,12 @@ class GameActivity : AppCompatActivity() {
     }
 
     private fun updateUI(gameState: GameViewModel.GameState) {
+        // Add logging for debugging card display
+        Log.d("GameActivity", "updateUI called: gameStarted=${gameState.gameStarted}, myCards.size=${gameState.myCards.size}")
+        if (gameState.myCards.isNotEmpty()) {
+            Log.d("GameActivity", "My cards: ${gameState.myCards.joinToString { "${it.rank.symbol}${it.suit}" }}")
+        }
+        
         // Update game status
         val gameStatusText = when {
             gameState.gameEnded -> getString(R.string.game_over)
@@ -119,12 +126,14 @@ class GameActivity : AppCompatActivity() {
             else -> getString(R.string.waiting_for_turn)
         }
         binding.textViewGameStatus.text = gameStatusText
-        
-        // Update player list with card counts
+          // Update player list with card counts
         val playersWithCards = gameState.players.map { player ->
             PlayerWithCards(
                 player = player,
-                cardCount = if (player.id == viewModel.getPlayerId()) gameState.myCards.size else 0
+                cardCount = if (player.id == viewModel.getPlayerId()) 
+                    gameState.myCards.size 
+                else 
+                    gameState.playerCardCounts[player.id] ?: 0
             )
         }
         playersAdapter.submitList(playersWithCards)
@@ -151,24 +160,51 @@ class GameActivity : AppCompatActivity() {
         // Update selected cards in adapter
         val selectedCards = gameState.myCards.filter { card -> viewModel.isCardSelected(card) }.toSet()
         cardsAdapter.setSelectedCards(selectedCards)
-        
-        // Update game controls visibility
+          // Update game controls visibility
         if (gameState.gameStarted && !gameState.gameEnded) {
             binding.layoutGameControls.visibility = View.VISIBLE
             binding.buttonStartGame.visibility = View.GONE
-            
-            // Enable/disable play button based on turn
+              // Enable/disable play button based on turn and card selection
             binding.buttonPlay.isEnabled = gameState.isMyTurn
             binding.buttonPass.isEnabled = gameState.isMyTurn && gameState.currentPlay != null
+            
+            // Update the UI based on whether it's the player's turn            
+            if (gameState.isMyTurn) {
+                binding.buttonPass.alpha = 1.0f
+                binding.recyclerViewPlayerCards.alpha = 1.0f
+                binding.textViewGameStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+                binding.textViewGameStatus.textSize = 22f
+                
+                // Update play button appearance based on card selection
+                binding.buttonPlay.alpha = if (viewModel.hasSelectedCards()) 1.0f else 0.5f
+                
+                // Update button text based on selected cards
+                if (viewModel.hasSelectedCards()) {
+                    binding.buttonPlay.text = getString(R.string.play_selected_cards, viewModel.getSelectedCardCount())
+                } else {
+                    binding.buttonPlay.text = getString(R.string.play_cards)
+                }
+            } else {
+                binding.buttonPlay.alpha = 0.5f
+                binding.buttonPass.alpha = 0.5f
+                binding.recyclerViewPlayerCards.alpha = 0.7f
+                binding.buttonPlay.text = getString(R.string.play_cards)
+                binding.textViewGameStatus.setTextColor(getColor(android.R.color.darker_gray))
+                binding.textViewGameStatus.textSize = 18f
+            }
+            
+            Log.d("GameActivity", "Game controls shown. isMyTurn=${gameState.isMyTurn}")
         } else if (gameState.gameEnded) {
             binding.layoutGameControls.visibility = View.GONE
             binding.buttonStartGame.visibility = View.GONE
             
             // Show game results
             showGameResults(gameState)
+            Log.d("GameActivity", "Game ended, showing results")
         } else {
             binding.layoutGameControls.visibility = View.GONE
             binding.buttonStartGame.visibility = if (isHost) View.VISIBLE else View.GONE
+            Log.d("GameActivity", "Waiting for game to start. isHost=$isHost")
         }
     }
     

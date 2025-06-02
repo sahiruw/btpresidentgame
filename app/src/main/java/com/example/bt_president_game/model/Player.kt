@@ -6,6 +6,7 @@ import kotlinx.parcelize.Parcelize
 
 @Parcelize
 data class Player(
+    val address: String,
     val id: String,
     val name: String,
     val isHost: Boolean = false,
