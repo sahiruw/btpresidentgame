@@ -415,7 +415,8 @@ class GameRepository @Inject constructor() {
 
         when (message) {
             is GameMessage.PlayerJoined -> {
-                val newPlayer = message.player
+                val originalPlayer = message.player
+                val newPlayer = originalPlayer.copy(id = senderId) // Create a new Player with updated id
                 Log.d(TAG, "Player joined: ${newPlayer.name} (${newPlayer.id})")
                 
                 // Add the new player to connected players
@@ -427,6 +428,7 @@ class GameRepository @Inject constructor() {
             }
             
             is GameMessage.GameStarted -> {
+                Log.d(TAG, "Game started with cards: ${message}")
                 _gameState.value = GameState.PLAYING
                 _myCards.value = message.cards
                 _currentPlayerId.value = message.firstPlayerId
