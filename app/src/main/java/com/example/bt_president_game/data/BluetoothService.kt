@@ -163,6 +163,7 @@ class BluetoothService(
     }
 
     fun sendMessage(message: String, recipientId: String) {
+        Log.d(TAG, "Sending message to $recipientId Socket: ${connectedSockets[recipientId]}")
         connectedSockets[recipientId]?.write(message)
     }
 
@@ -248,7 +249,8 @@ class BluetoothService(
                 // Add delimiter to mark the end of the complete message
                 val messageWithDelimiter = message + MESSAGE_DELIMITER
                 Log.d(TAG, "Sending message of ${messageWithDelimiter.length} bytes to $deviceId")
-                outputStream?.write(messageWithDelimiter.toByteArray())
+                outputStream?.write(messageWithDelimiter.toByteArray(Charsets.UTF_8))
+
             } catch (e: IOException) {
                 Log.e(TAG, "Error sending data", e)
             }

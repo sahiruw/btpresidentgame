@@ -30,7 +30,7 @@ class GameRepository @Inject constructor() {
     
     companion object {
         private const val TAG = "GameRepository"
-        private const val MAX_PLAYERS = 3 // Maximum number of players in a president game
+        private const val MAX_PLAYERS = 2 // Maximum number of players in a president game
         private val SERVICE_UUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66")
     }
     
@@ -180,10 +180,22 @@ class GameRepository @Inject constructor() {
         
         if (connected) {
             _gameState.value = GameState.WAITING_FOR_PLAYERS
+
+            // Send PlayerJoined message to the host
+            val player = Player(id = bluetoothAdapter?.address ?: "unknown", name = bluetoothAdapter?.name ?: "Player", isHost = false)
+            val joinMessage = GameMessage.PlayerJoined(player)
+            val serializedMessage = serializeMessage(joinMessage)
+            bluetoothService?.sendMessage(serializedMessage, device.address)
+            // bluetoothService?.sendMessageToAll(serializedMessage)
+            Log.d(TAG, "Successfully connected to game hosted by ${device.name} (${device.address})")
             
             // Request the current game state from the host
             val message = serializeMessage(GameMessage.RequestGameState)
             bluetoothService?.sendMessageToAll(message)
+        }
+        else {
+            Log.e(TAG, "Failed to connect to game hosted by ${device.name} (${device.address})")
+            _gameState.value = GameState.WAITING_FOR_PLAYERS
         }
         
         return connected
@@ -232,11 +244,17 @@ class GameRepository @Inject constructor() {
         
         // Send start game message to all players
         for (player in players) {
+            Log.d(TAG, "Sending start game message to player: ${player.name} (${player.id})")
             if (player.id != playerId) { // Don't send to self
-                val cards = playerCards[player.id] ?: emptyList()
+                val originalCards = playerCards[player.id] ?: emptyList()
+                val cards = ArrayList(originalCards) // Ensure it's a serializable full copy
+
                 val startMessage = GameMessage.GameStarted(cards, firstPlayerId)
                 val serializedMessage = serializeMessage(startMessage)
                 bluetoothService?.sendMessage(serializedMessage, player.id)
+            }
+            else {
+                _myCards.value = playerCards[player.id] ?: emptyList()
             }
         }
         
@@ -392,9 +410,13 @@ class GameRepository @Inject constructor() {
     }
     
     private fun processGameMessage(message: GameMessage, senderId: String) {
+        Log.d(TAG, "Processing message of type: ${message.javaClass.simpleName} from $senderId")
+        Log.d(TAG, "Message content: $message")
+
         when (message) {
             is GameMessage.PlayerJoined -> {
                 val newPlayer = message.player
+                Log.d(TAG, "Player joined: ${newPlayer.name} (${newPlayer.id})")
                 
                 // Add the new player to connected players
                 val currentPlayers = _connectedPlayers.value.toMutableList()
@@ -465,7 +487,9 @@ class GameRepository @Inject constructor() {
                 _connectedPlayers.value = message.players
             }
         }
-    }    // Serialization and deserialization methods
+    }    
+    
+    // Serialization and deserialization methods
     private fun serializeMessage(message: GameMessage): String {
         Log.d(TAG, "Serializing message: ${message.javaClass.simpleName}")
         try {
@@ -527,7 +551,9 @@ class GameRepository @Inject constructor() {
     
     fun getPlayerId(): String {
         return playerId
-    }    fun cleanup() {
+    }    
+    
+    fun cleanup() {
         bluetoothService?.stop()
         bluetoothService = null
         
@@ -545,7 +571,9 @@ class GameRepository @Inject constructor() {
         _currentPlay.value = null
         _currentPlayerId.value = null
         _finishedPlayers.value = emptyList()
-    }    fun initializeBluetooth(adapter: BluetoothAdapter) {
+    }    
+    
+    fun initializeBluetooth(adapter: BluetoothAdapter) {
         this.bluetoothAdapter = adapter
         
         // Log Bluetooth adapter details

@@ -25,7 +25,7 @@ enum class Suit {
     SPADES
 }
 
-enum class Rank(val value: Int, val symbol: String) {
+enum class Rank(val value: Int, val symbol: String) : Serializable {
     THREE(3, "3"),
     FOUR(4, "4"),
     FIVE(5, "5"),
@@ -38,5 +38,6 @@ enum class Rank(val value: Int, val symbol: String) {
     QUEEN(12, "Q"),
     KING(13, "K"),
     ACE(14, "A"),
-    TWO(15, "2") // Highest card in President
+    TWO(15, "2")
 }
+
