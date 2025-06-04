@@ -29,14 +29,14 @@ class GameViewModel @Inject constructor(
     }
 
     private val _gameState = MutableStateFlow(GameState())
-    val gameState: StateFlow<GameState> = _gameState
-
+    val gameState: StateFlow<GameState> = _gameState    
     private val _errorEvent = MutableSharedFlow<String>()
     val errorEvent: SharedFlow<String> = _errorEvent
+    
+    private val _hapticFeedbackEvent = MutableSharedFlow<Unit>()
+    val hapticFeedbackEvent: SharedFlow<Unit> = _hapticFeedbackEvent
 
-    private val selectedCards = mutableListOf<Card>()
-
-    // Game state for the current device
+    private val selectedCards = mutableListOf<Card>()    // Game state for the current device
     data class GameState(
         val isMyTurn: Boolean = false,
         val gameStarted: Boolean = false,
@@ -46,7 +46,8 @@ class GameViewModel @Inject constructor(
         val currentPlayerId: String? = null,
         val gameEnded: Boolean = false,
         val playersFinishOrder: List<String> = emptyList(),
-        val playerCardCounts: Map<String, Int> = emptyMap()
+        val playerCardCounts: Map<String, Int> = emptyMap(),
+        val selectedCardCount: Int = 0
     )
 
     fun initializeAsHost() {
@@ -246,9 +247,14 @@ class GameViewModel @Inject constructor(
             }
         }
         
+        // Apply haptic feedback to indicate selection change
+        viewModelScope.launch {
+            _hapticFeedbackEvent.emit(Unit)
+        }
+        
         // Notify UI of selection change
         viewModelScope.launch {
-            _gameState.value = _gameState.value.copy()  // Trigger UI update with same state
+            _gameState.value = _gameState.value.copy(selectedCardCount = selectedCards.size)  // Trigger UI update
         }
     }
 
@@ -288,10 +294,13 @@ class GameViewModel @Inject constructor(
                     isMyTurn = false
                 )
                 
-                // Send the move to other players
+                // Send the move to other players                
                 gameRepository.playCards(playedCards)
                 
                 selectedCards.clear()
+                viewModelScope.launch {
+                    _gameState.value = _gameState.value.copy(selectedCardCount = 0)
+                }
                 
                 // Check if player has finished
                 if (updatedCards.isEmpty()) {

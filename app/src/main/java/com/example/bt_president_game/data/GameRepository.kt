@@ -224,7 +224,8 @@ class GameRepository @Inject constructor() {
         
         return connected
     }
-      fun startGame() {
+
+     fun startGame() {
         if (!_isHost.value) {
             throw IllegalStateException("Only the host can start the game")
         }
@@ -525,7 +526,8 @@ class GameRepository @Inject constructor() {
                 _currentPlayerId.value = message.firstPlayerId
             }
             
-            is GameMessage.CardsPlayed -> {                _currentPlay.value = message.playedCards
+            is GameMessage.CardsPlayed -> {                
+                _currentPlay.value = message.playedCards
                 
                 // Update card count for the player who played cards
                 val currentCardCounts = _playerCardCounts.value.toMutableMap()

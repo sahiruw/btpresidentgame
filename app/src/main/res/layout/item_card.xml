@@ -9,6 +9,7 @@
     app:cardElevation="4dp">
 
     <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/cardContentLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@android:color/white"

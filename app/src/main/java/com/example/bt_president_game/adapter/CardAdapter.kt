@@ -71,23 +71,46 @@ class CardAdapter(
             binding.textViewCardValueBottom.setTextColor(textColor)
             binding.textViewCardSuit.setTextColor(textColor)
             binding.textViewCardSuitTop.setTextColor(textColor)
-            
-            // Handle selection
+              // Handle selection
             if (selectable) {
                 binding.checkBoxSelected.visibility = android.view.View.VISIBLE
                 binding.checkBoxSelected.isChecked = isSelected
+                  // Set the ripple background for touch feedback
+                binding.cardContentLayout.setBackgroundResource(R.drawable.card_ripple_effect)
                 
                 if (isSelected) {
-                    binding.root.setCardBackgroundColor(ContextCompat.getColor(binding.root.context, R.color.card_selected_background))
+                    // Apply enhanced selection styling
+                    binding.cardContentLayout.isSelected = true
+                    binding.root.cardElevation = 8f  // Increase elevation for selected cards
+                    binding.root.setCardBackgroundColor(ContextCompat.getColor(binding.root.context, R.color.card_selected_elevation))
                 } else {
+                    // Reset to default styling
+                    binding.cardContentLayout.isSelected = false
+                    binding.root.cardElevation = 4f  // Default elevation
                     binding.root.setCardBackgroundColor(Color.WHITE)
                 }
                 
+                // Add a scale animation when clicked
                 binding.root.setOnClickListener {
-                    onCardClick?.invoke(card)
+                    it.animate()
+                        .scaleX(0.95f)
+                        .scaleY(0.95f)
+                        .setDuration(100)
+                        .withEndAction {
+                            it.animate()
+                                .scaleX(1f)
+                                .scaleY(1f)
+                                .setDuration(100)
+                                .start()
+                            onCardClick?.invoke(card)
+                        }
+                        .start()
                 }
             } else {
                 binding.checkBoxSelected.visibility = android.view.View.GONE
+                binding.cardContentLayout.setBackgroundColor(Color.WHITE)
+                binding.cardContentLayout.isSelected = false
+                binding.root.cardElevation = 4f
                 binding.root.setCardBackgroundColor(Color.WHITE)
                 binding.root.setOnClickListener(null)
             }

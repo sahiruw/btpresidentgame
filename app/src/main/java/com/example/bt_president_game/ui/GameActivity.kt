@@ -1,7 +1,12 @@
 package com.example.bt_president_game.ui
 
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.Toast
 import androidx.activity.viewModels
@@ -59,9 +64,9 @@ class GameActivity : AppCompatActivity() {
         binding.recyclerViewCurrentCards.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         
         // Initialize adapters
-        playersAdapter = PlayerAdapter()
+        playersAdapter = PlayerAdapter()        
         cardsAdapter = CardAdapter(true) { card -> viewModel.selectCard(card) }
-        currentCardsAdapter = SmallCardAdapter()
+        currentCardsAdapter = SmallCardAdapter(false)
         
         binding.recyclerViewPlayers.adapter = playersAdapter
         binding.recyclerViewPlayerCards.adapter = cardsAdapter
@@ -103,10 +108,21 @@ class GameActivity : AppCompatActivity() {
                 updateUI(gameState)
             }
         }
-        
-        lifecycleScope.launch {
+          lifecycleScope.launch {
             viewModel.errorEvent.collect { errorMessage ->
                 Toast.makeText(this@GameActivity, errorMessage, Toast.LENGTH_LONG).show()
+            }
+        }
+        
+        // Observe haptic feedback events
+        lifecycleScope.launch {
+            viewModel.hapticFeedbackEvent.collect {
+                // Provide haptic feedback when cards are selected
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    binding.recyclerViewPlayerCards.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                } else {
+                    binding.recyclerViewPlayerCards.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                }
             }
         }
     }

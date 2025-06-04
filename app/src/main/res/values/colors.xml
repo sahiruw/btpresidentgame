@@ -10,6 +10,8 @@
     
     <!-- Card Colors -->
     <color name="card_selected_background">#E6F3FF</color>
+    <color name="card_selected_border">#4285F4</color>
+    <color name="card_selected_elevation">#8FC6FC</color>
     
     <!-- Player Rank Colors -->
     <color name="rank_president">#FFD700</color> <!-- Gold -->
