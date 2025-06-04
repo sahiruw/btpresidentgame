@@ -78,13 +78,12 @@ class BluetoothService(
             buffer.clear()
         }
     }
+      // Callback for when players connect
+    private var onPlayerConnected: (() -> Unit)? = null
     
-    // Callback for when at least one player has connected
-    private var onFirstPlayerConnected: (() -> Unit)? = null
-    
-    // Set the callback for first player connection
-    fun setOnFirstPlayerConnectedCallback(callback: () -> Unit) {
-        onFirstPlayerConnected = callback
+    // Set the callback for player connection
+    fun setOnPlayerConnectedCallback(callback: () -> Unit) {
+        onPlayerConnected = callback
     }
     
     suspend fun startAcceptingConnections(serverSocket: BluetoothServerSocket, maxConnections: Int): Boolean {
@@ -95,9 +94,10 @@ class BluetoothService(
                 var connectionCount = 0
                 var retryCount = 0
                 val maxRetries = 3
-                var firstConnectionNotified = false
                 
-                while (isRunning && connectionCount < maxConnections) {
+                // We will continue accepting connections indefinitely, even after game starts
+                // The game can be started as soon as at least one player connects
+                while (isRunning) {
                     try {                        
                         Log.d(TAG, "Waiting for incoming connections... (Attempt ${retryCount + 1})")
                         // This call will block until a connection is accepted or an exception occurs
@@ -118,15 +118,11 @@ class BluetoothService(
                         // Start a thread to handle communication with this device
                         connectedDevice.startCommunication()
                         connectionCount++
+                          Log.d(TAG, "Accepted connection from $deviceId, total connections: $connectionCount")
                         
-                        Log.d(TAG, "Accepted connection from $deviceId, total connections: $connectionCount")
-                        
-                        // Notify that we have at least one connection - but only once
-                        if (!firstConnectionNotified && connectionCount > 0) {
-                            firstConnectionNotified = true
-                            withContext(Dispatchers.Main) {
-                                onFirstPlayerConnected?.invoke()
-                            }
+                        // Notify about the new connection
+                        withContext(Dispatchers.Main) {
+                            onPlayerConnected?.invoke()
                         }
                         
                     } catch (e: IOException) {

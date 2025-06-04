@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.io.IOException
 import java.util.UUID
 import javax.inject.Inject
@@ -75,14 +76,21 @@ class MainViewModel @Inject constructor(
             try {
                 gameRepository.initializeGameAsHost()
                 Log.d(TAG, "Game initializing as host")
-                
-                // Observe the playersConnectedEvent to trigger UI updates
-                // This needs to be collected before starting to accept connections
+                  // Set up the collector to observe player connections
                 viewModelScope.launch {
                     gameRepository.playersConnectedEvent.collect {
                         Log.d(TAG, "Player connected event received, triggering gameCreatedEvent")
                         _gameCreatedEvent.emit(Unit)
                     }
+                }
+                
+                // Always trigger the UI update to show game creation immediately
+                // The user will be able to start the game once at least one player connects
+                viewModelScope.launch {
+                    // Small delay to ensure proper UI update sequencing
+                    delay(500)
+                    Log.d(TAG, "Game created, emitting event")
+                    _gameCreatedEvent.emit(Unit)
                 }
                 
                 // Start accepting connections in the background

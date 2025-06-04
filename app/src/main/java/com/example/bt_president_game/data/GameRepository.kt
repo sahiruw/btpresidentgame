@@ -165,13 +165,11 @@ class GameRepository @Inject constructor() {
                 return false
             }
         }
-        
-        // Set up callback for when first player connects
-        bluetoothService?.setOnFirstPlayerConnectedCallback {
-            Log.d(TAG, "At least one player connected, ready to start game")
-            viewModelScope.launch {
-                _playersConnectedEvent.emit(true)
-            }
+          // Set up callback for when players connect
+        bluetoothService?.setOnPlayerConnectedCallback {
+            Log.d(TAG, "Player connected")
+            // We'll handle the connected event in the PlayerJoined message handler
+            // to make sure we have all the player information
         }
         
         serverSocket?.let { socket ->
@@ -226,12 +224,14 @@ class GameRepository @Inject constructor() {
         
         return connected
     }
-    
-    fun startGame() {
+      fun startGame() {
         if (!_isHost.value) {
             throw IllegalStateException("Only the host can start the game")
         }
 
+        // Log the current players before starting
+        Log.d(TAG, "Starting game with players: ${_connectedPlayers.value.map { "${it.name} (${it.id})" }}")
+        
         // Change game state to dealing cards
         _gameState.value = GameState.DEALING_CARDS
         
@@ -472,18 +472,49 @@ class GameRepository @Inject constructor() {
         Log.d(TAG, "Processing message of type: ${message.javaClass.simpleName} from $senderId")
         Log.d(TAG, "Message content: $message")
 
-        when (message) {
-            is GameMessage.PlayerJoined -> {
+        when (message) {            is GameMessage.PlayerJoined -> {
                 val originalPlayer = message.player
                 val newPlayer = originalPlayer.copy(address = senderId) // Create a new Player with updated id
                 Log.d(TAG, "Player joined: ${newPlayer.name} (${newPlayer.id})")
                 
-                // Add the new player to connected players
+                // Add the new player to connected players - even if game has already started
                 val currentPlayers = _connectedPlayers.value.toMutableList()
                 if (!currentPlayers.any { it.id == newPlayer.id }) {
                     currentPlayers.add(newPlayer)
                     _connectedPlayers.value = currentPlayers
                     Log.d(TAG, "Updated connected players: ${_connectedPlayers.value.map { it.name }}")
+                    
+                    // Only emit the players connected event if we're still waiting for players
+                    // This prevents emitting the event after the game has already started
+                    if (_gameState.value == GameState.WAITING_FOR_PLAYERS) {
+                        viewModelScope.launch {
+                            _playersConnectedEvent.emit(true)
+                        }
+                    }
+                    
+                    // If the game has already started, and we're the host, send the current game state to the new player
+                    if (_isHost.value && _gameState.value != GameState.WAITING_FOR_PLAYERS) {
+                        Log.d(TAG, "Game already in progress, sending current state to new player")
+                        
+                        // Send current game state to the new player
+                        val currentState = GameMessage.GameState(
+                            currentState = _gameState.value,
+                            players = _connectedPlayers.value,
+                            currentPlay = _currentPlay.value,
+                            currentPlayerId = _currentPlayerId.value,
+                            nextPlayerId = null,
+                            finishedPlayers = _finishedPlayers.value,
+                            playerCardCounts = _playerCardCounts.value
+                        )
+                        
+                        val serializedMessage = serializeMessage(currentState)
+                        bluetoothService?.sendMessage(serializedMessage, senderId)
+                        
+                        // Notify all other players about the new player
+                        val updatePlayersMessage = GameMessage.UpdatePlayers(_connectedPlayers.value)
+                        val serializedUpdateMessage = serializeMessage(updatePlayersMessage)
+                        bluetoothService?.sendMessageToAll(serializedUpdateMessage)
+                    }
                 }
             }
             
