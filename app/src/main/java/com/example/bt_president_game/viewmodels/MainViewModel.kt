@@ -70,20 +70,25 @@ class MainViewModel @Inject constructor(
                 _errorEvent.emit("Failed to initialize Bluetooth: ${e.message}")
             }
         }
-    }
-
-    fun startHostingGame() {
+    }    fun startHostingGame() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 gameRepository.initializeGameAsHost()
                 Log.d(TAG, "Game initializing as host")
+                
+                // Observe the playersConnectedEvent to trigger UI updates
+                // This needs to be collected before starting to accept connections
+                viewModelScope.launch {
+                    gameRepository.playersConnectedEvent.collect {
+                        Log.d(TAG, "Player connected event received, triggering gameCreatedEvent")
+                        _gameCreatedEvent.emit(Unit)
+                    }
+                }
+                
                 // Start accepting connections in the background
                 val success = gameRepository.startHostingGame()
                 Log.d(TAG, "Game hosting started. Status: $success")
-                if (success) {
-                    Log.d(TAG, "Hosting game started successfully")
-                    _gameCreatedEvent.emit(Unit)
-                } else {
+                if (!success) {
                     _errorEvent.emit("Failed to start hosting game")
                     Log.e(TAG, "Failed to start hosting game")
                 }
@@ -92,7 +97,7 @@ class MainViewModel @Inject constructor(
                 Log.e(TAG, "Error starting server socket", e)
             }
         }
-    }    
+    }
     fun startDiscovery() {
         Log.d(TAG, "Starting Bluetooth discovery")
         

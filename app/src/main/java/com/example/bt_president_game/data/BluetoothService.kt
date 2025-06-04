@@ -79,6 +79,14 @@ class BluetoothService(
         }
     }
     
+    // Callback for when at least one player has connected
+    private var onFirstPlayerConnected: (() -> Unit)? = null
+    
+    // Set the callback for first player connection
+    fun setOnFirstPlayerConnectedCallback(callback: () -> Unit) {
+        onFirstPlayerConnected = callback
+    }
+    
     suspend fun startAcceptingConnections(serverSocket: BluetoothServerSocket, maxConnections: Int): Boolean {
         isRunning = true
         
@@ -87,10 +95,12 @@ class BluetoothService(
                 var connectionCount = 0
                 var retryCount = 0
                 val maxRetries = 3
+                var firstConnectionNotified = false
                 
                 while (isRunning && connectionCount < maxConnections) {
                     try {                        
-                        Log.d(TAG, "Waiting for incoming connections... (Attempt ${retryCount + 1})")                        // This call will block until a connection is accepted or an exception occurs
+                        Log.d(TAG, "Waiting for incoming connections... (Attempt ${retryCount + 1})")
+                        // This call will block until a connection is accepted or an exception occurs
                         // For better compatibility, use the non-timeout version of accept
                         Log.d(TAG, "Server is discoverable: ${bluetoothAdapter.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE}")
                         val socket = serverSocket.accept()
@@ -110,8 +120,14 @@ class BluetoothService(
                         connectionCount++
                         
                         Log.d(TAG, "Accepted connection from $deviceId, total connections: $connectionCount")
-                        // Send current players list to the new client
-                        // sendPlayersList(deviceId)
+                        
+                        // Notify that we have at least one connection - but only once
+                        if (!firstConnectionNotified && connectionCount > 0) {
+                            firstConnectionNotified = true
+                            withContext(Dispatchers.Main) {
+                                onFirstPlayerConnected?.invoke()
+                            }
+                        }
                         
                     } catch (e: IOException) {
                         Log.e(TAG, "Accept failed", e)
@@ -122,11 +138,12 @@ class BluetoothService(
                             Log.e(TAG, "Max retries exceeded or fatal error occurred, giving up: ${e.message}")
                             break
                         }
-                          Log.d(TAG, "Retrying after transient error (${e.message}), attempt $retryCount of $maxRetries")
+                        Log.d(TAG, "Retrying after transient error (${e.message}), attempt $retryCount of $maxRetries")
                         delay(2000) // Wait 2 seconds before retrying
                     }
                 }
                 
+                // Return true as long as we have at least one connection, even if we didn't reach maxConnections
                 val result = connectionCount > 0 || !isRunning // Success if we have connections or if we stopped voluntarily
                 Log.d(TAG, "Connection acceptance completed with result: $result (connections: $connectionCount)")
                 result
@@ -135,7 +152,7 @@ class BluetoothService(
                 false
             }
         }
-    }    suspend fun connectToServer(device: BluetoothDevice, uuid: UUID): Boolean {
+    }suspend fun connectToServer(device: BluetoothDevice, uuid: UUID): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 Log.d(TAG, "Connecting to server device: ${device.name} (${device.address})")

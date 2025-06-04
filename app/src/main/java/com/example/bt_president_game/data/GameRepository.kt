@@ -12,10 +12,13 @@ import com.example.bt_president_game.model.Player
 import com.example.bt_president_game.model.PlayedCards
 import com.example.bt_president_game.model.Rank
 import com.example.bt_president_game.model.Suit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.ObjectInputStream
@@ -33,6 +36,9 @@ class GameRepository @Inject constructor() {
         private const val MAX_PLAYERS = 2 // Maximum number of players in a president game
         private val SERVICE_UUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66")
     }
+    
+    // Create a coroutine scope for this repository
+    private val viewModelScope = CoroutineScope(Dispatchers.Main)
     
     // Device ID for the local player (using a random UUID for now)
     private val playerId = UUID.randomUUID().toString()
@@ -105,7 +111,13 @@ class GameRepository @Inject constructor() {
         // Add self as the first player (host)
         val hostName = bluetoothAdapter?.name ?: "Host"
         val hostPlayer = Player(id = playerId, name = hostName, isHost = true, address = bluetoothAdapter?.address ?: "unknown")
-        _connectedPlayers.value = listOf(hostPlayer)
+        
+        if (_connectedPlayers.value.isEmpty()) {
+            _connectedPlayers.value = listOf(hostPlayer)
+            Log.d(TAG, "Added host player: ${hostPlayer.name} (${hostPlayer.id})")
+        } else {
+            Log.w(TAG, "Connected players list already has players, not adding host again")
+        }
     }
 
     fun initializeGameAsClient() {
@@ -134,8 +146,10 @@ class GameRepository @Inject constructor() {
         val playerName = bluetoothAdapter?.name ?: "Player"
         val player = Player(id = playerId, name = playerName, isHost = false, address = bluetoothAdapter?.address ?: "unknown")
         _connectedPlayers.value = listOf(player)
-    }
-
+    }    // Add flow to emit when players connect
+    private val _playersConnectedEvent = MutableSharedFlow<Boolean>()
+    val playersConnectedEvent: SharedFlow<Boolean> = _playersConnectedEvent
+    
     suspend fun startHostingGame(): Boolean {
         if (bluetoothAdapter == null) {
             Log.e(TAG, "Cannot start hosting game - BluetoothAdapter is null")
@@ -149,6 +163,14 @@ class GameRepository @Inject constructor() {
                 bluetoothService = BluetoothService(it, ::handleRawMessage)
             } ?: run {
                 return false
+            }
+        }
+        
+        // Set up callback for when first player connects
+        bluetoothService?.setOnFirstPlayerConnectedCallback {
+            Log.d(TAG, "At least one player connected, ready to start game")
+            viewModelScope.launch {
+                _playersConnectedEvent.emit(true)
             }
         }
         
