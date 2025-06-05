@@ -251,7 +251,7 @@ class GameRepository @Inject constructor() {
         for (i in players.indices) {
             val start = i * cardsPerPlayer
             val end = if (i == players.size - 1) deck.size else (i + 1) * cardsPerPlayer
-            val cards = deck.subList(start, end)
+            val cards = deck.subList(start, end).sortedWith(compareBy({ it.suit.ordinal }, { it.rank.ordinal }))
             playerCards[players[i].id] = cards
             
             // If this is the host's cards, set my cards
@@ -262,12 +262,12 @@ class GameRepository @Inject constructor() {
         
         // Determine who goes first (player with 3 of clubs)
         var firstPlayerId = players.first().id
-        // for ((id, cards) in playerCards) {
-        //     if (cards.any { card -> card.suit == Suit.CLUBS && card.rank == Rank.THREE }) {
-        //         firstPlayerId = id
-        //         break
-        //     }
-        // }
+        for ((id, cards) in playerCards) {
+            if (cards.any { card -> card.suit == Suit.CLUBS && card.rank == Rank.THREE }) {
+                firstPlayerId = id
+                break
+            }
+        }
         
         // Send start game message to all players
         for (player in players) {
@@ -473,7 +473,9 @@ class GameRepository @Inject constructor() {
         Log.d(TAG, "Processing message of type: ${message.javaClass.simpleName} from $senderId")
         Log.d(TAG, "Message content: $message")
 
-        when (message) {            is GameMessage.PlayerJoined -> {
+        when (message) {            
+            
+            is GameMessage.PlayerJoined -> {
                 val originalPlayer = message.player
                 val newPlayer = originalPlayer.copy(address = senderId) // Create a new Player with updated id
                 Log.d(TAG, "Player joined: ${newPlayer.name} (${newPlayer.id})")
@@ -533,14 +535,36 @@ class GameRepository @Inject constructor() {
                 val currentCardCounts = _playerCardCounts.value.toMutableMap()
                 currentCardCounts[message.playedCards.playerId] = message.remainingCardCount
                 _playerCardCounts.value = currentCardCounts
+
+                if (_isHost.value) {
+                    // Notify all players about the played cards
+                    val updateMessage = GameMessage.CardsPlayed(message.playedCards, message.remainingCardCount)
+                    val serializedMessage = serializeMessage(updateMessage)
+                    bluetoothService?.sendMessageToAll(serializedMessage)
+                }
             }
+
               is GameMessage.PlayerPassed -> {
                 // For tracking purposes, add the player who passed to a temporary tracking set
                 Log.d(TAG, "Player ${message.playerId} passed their turn")
+
+                if (_isHost.value) {
+                    // Notify all players that this player has passed
+                    val passMessage = GameMessage.PlayerPassed(message.playerId)
+                    val serializedMessage = serializeMessage(passMessage)
+                    bluetoothService?.sendMessageToAll(serializedMessage)
+                }
             }
             
             is GameMessage.UpdateTurn -> {
                 _currentPlayerId.value = message.playerId
+
+                if (_isHost.value) {
+                    // Notify all players about the updated turn
+                    val updateTurnMessage = GameMessage.UpdateTurn(message.playerId)
+                    val serializedMessage = serializeMessage(updateTurnMessage)
+                    bluetoothService?.sendMessageToAll(serializedMessage)
+                }
             }
             
             is GameMessage.GameEnded -> {
@@ -591,6 +615,12 @@ class GameRepository @Inject constructor() {
             
             is GameMessage.UpdatePlayers -> {
                 _connectedPlayers.value = message.players
+
+                if (_isHost.value) {
+                    // Notify all players about the updated player list
+                    val serializedMessage = serializeMessage(message)
+                    bluetoothService?.sendMessageToAll(serializedMessage)
+                }
             }
         }
     }    
