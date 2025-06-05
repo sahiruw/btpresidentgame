@@ -71,7 +71,9 @@ class MainViewModel @Inject constructor(
                 _errorEvent.emit("Failed to initialize Bluetooth: ${e.message}")
             }
         }
-    }    fun startHostingGame() {
+    }    
+    
+    fun startHostingGame() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 gameRepository.initializeGameAsHost()
@@ -106,9 +108,11 @@ class MainViewModel @Inject constructor(
             }
         }
     }
+
+
     fun startDiscovery() {
         Log.d(TAG, "Starting Bluetooth discovery")
-        
+
         val bt = bluetoothAdapter
         if (bt == null) {
             Log.e(TAG, "Bluetooth adapter not initialized")
@@ -117,22 +121,23 @@ class MainViewModel @Inject constructor(
             }
             return
         }
-        
+
         if (isDiscovering) {
             Log.d(TAG, "Discovery already in progress, canceling previous discovery")
             bt.cancelDiscovery()
         }
-        
+
         isDiscovering = true
         discoveredDevices.clear()
         Log.d(TAG, "Cleared previous discovered devices")
-        
+
         // First, add any already paired devices to the list
         try {
             val pairedDevices = bt.bondedDevices
             if (pairedDevices.isNotEmpty()) {
                 Log.d(TAG, "Found ${pairedDevices.size} paired devices")
                 for (device in pairedDevices) {
+                    Log.d(TAG, "Processing paired device: ${device} ")
                     val deviceName = device.name ?: "Unknown Device"
                     val deviceAddress = device.address
                     Log.d(TAG, "Adding paired device: $deviceName ($deviceAddress)")
@@ -147,7 +152,8 @@ class MainViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error accessing paired devices", e)
         }
-          if (discoveryReceiver == null) {
+
+        if (discoveryReceiver == null) {
             discoveryReceiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
                     Log.d(TAG, "Discovery receiver triggered: ${intent} context: $context")
@@ -160,61 +166,70 @@ class MainViewModel @Inject constructor(
                                 @Suppress("DEPRECATION")
                                 intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                             }
+
                             device?.let {
                                 val deviceName = it.name
                                 val deviceAddress = it.address
                                 val bondState = getBondStateString(it.bondState)
                                 val deviceClass = it.bluetoothClass?.majorDeviceClass ?: -1
-                                
+
                                 Log.d(TAG, "Discovered device: $deviceAddress")
                                 Log.d(TAG, "Device details: Name='${deviceName ?: "null"}', " +
-                                           "Address=$deviceAddress, " +
-                                           "BondState=$bondState, " +
-                                           "DeviceClass=$deviceClass" +
-                                           "device=$it")
-                                
-                                // Some devices might not broadcast their name during discovery
-                                // For those, we can try to get name if the device is already bonded
-                                val finalDeviceName = deviceName ?: "Unknown Device"
-                                
-                                if (!discoveredDevices.containsKey(deviceAddress)) {
-                                    discoveredDevices[deviceAddress] = Pair(finalDeviceName, deviceAddress)
-                                    
-                                    Log.d(TAG, "New device added to discovered list: $finalDeviceName ($deviceAddress)")
-                                    viewModelScope.launch {
-                                        _foundDevicesEvent.emit(discoveredDevices.values.toList())
+                                        "Address=$deviceAddress, " +
+                                        "BondState=$bondState, " +
+                                        "DeviceClass=$deviceClass" +
+                                        "device=$it")
+
+                                // Filter for game rooms by UUID
+                                val serviceUUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66") // Your game UUID
+
+                                // Check if the device is advertising the correct UUID
+                                val serviceUuids = it.uuids
+                                if (serviceUuids?.any { uuid -> uuid.toString() == serviceUUID.toString() } == true) {
+                                    // This device is hosting a game room
+                                    val finalDeviceName = deviceName ?: "Unknown Device"
+
+                                    if (!discoveredDevices.containsKey(deviceAddress)) {
+                                        discoveredDevices[deviceAddress] = Pair(finalDeviceName, deviceAddress)
+
+                                        Log.d(TAG, "New game room found: $finalDeviceName ($deviceAddress)")
+                                        viewModelScope.launch {
+                                            _foundDevicesEvent.emit(discoveredDevices.values.toList())
+                                        }
                                     }
                                 }
                             }
                         }
+
                         BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
                             isDiscovering = false
-                            
+
                             if (discoveredDevices.isEmpty()) {
                                 viewModelScope.launch {
-                                    _errorEvent.emit("No devices found")
+                                    _errorEvent.emit("No game rooms found")
                                 }
                             }
                         }
                     }
                 }
             }
-            
+
             val filter = IntentFilter().apply {
                 addAction(BluetoothDevice.ACTION_FOUND)
                 addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
             }
-            
+
             context.registerReceiver(discoveryReceiver, filter)
         }
-        
+
         if (bt.isDiscovering) {
             bt.cancelDiscovery()
         }
-        
+
         bt.startDiscovery()
         Log.d(TAG, "Bluetooth discovery started")
     }
+
 
     fun connectToDevice(deviceAddress: String) {
         viewModelScope.launch(Dispatchers.IO) {

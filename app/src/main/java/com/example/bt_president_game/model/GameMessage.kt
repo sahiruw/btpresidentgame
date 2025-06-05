@@ -23,6 +23,9 @@ sealed class GameMessage : Serializable {
     
     // Message sent when a player passes their turn
     data class PlayerPassed(val playerId: String) : GameMessage()
+
+    // Message sent when a player finishes their turn
+    data class PlayerFinished(val playerId: String) : GameMessage()
     
     // Message sent when the game ends
     data class GameEnded(val playerRanking: List<String>) : GameMessage()

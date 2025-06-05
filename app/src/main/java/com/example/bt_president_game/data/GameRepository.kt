@@ -146,7 +146,9 @@ class GameRepository @Inject constructor() {
         val playerName = bluetoothAdapter?.name ?: "Player"
         val player = Player(id = playerId, name = playerName, isHost = false, address = bluetoothAdapter?.address ?: "unknown")
         _connectedPlayers.value = listOf(player)
-    }    // Add flow to emit when players connect
+    }    
+    
+    // Add flow to emit when players connect
     private val _playersConnectedEvent = MutableSharedFlow<Boolean>()
     val playersConnectedEvent: SharedFlow<Boolean> = _playersConnectedEvent
     
@@ -251,7 +253,7 @@ class GameRepository @Inject constructor() {
         for (i in players.indices) {
             val start = i * cardsPerPlayer
             val end = if (i == players.size - 1) deck.size else (i + 1) * cardsPerPlayer
-            val cards = deck.subList(start, end).sortedWith(compareBy({ it.suit.ordinal }, { it.rank.ordinal }))
+            val cards = deck.subList(start, end).sortedWith(compareBy({ it.value }))
             playerCards[players[i].id] = cards
             
             // If this is the host's cards, set my cards
@@ -388,6 +390,8 @@ class GameRepository @Inject constructor() {
         // If we get here, all players have finished
         endGame()
     }
+
+
       private fun checkForRoundEnd() {
         // Check if everyone has passed except the current player
         val players = _connectedPlayers.value
@@ -417,25 +421,29 @@ class GameRepository @Inject constructor() {
         }
     }
     
-    fun playerFinished() {
+    fun playerFinished(finishedPlayerId: String? = null) {
+        val id = finishedPlayerId ?: playerId
+
         // Add player to finished list
         val updatedFinishedPlayers = _finishedPlayers.value.toMutableList()
-        updatedFinishedPlayers.add(playerId)
-        _finishedPlayers.value = updatedFinishedPlayers
-        
+        if (!updatedFinishedPlayers.contains(id)) {
+            updatedFinishedPlayers.add(id)
+            _finishedPlayers.value = updatedFinishedPlayers
+        }
+
         // Check if only one player is left
         val activePlayers = _connectedPlayers.value.filter { player ->
             !_finishedPlayers.value.contains(player.id)
         }
-        
+
         if (activePlayers.size <= 1) {
             // Game is over
             endGame()
         } else {
             // Send player finished message
-            val message = serializeMessage(GameMessage.PlayerPassed(playerId))
+            val message = serializeMessage(GameMessage.PlayerFinished(id))
             bluetoothService?.sendMessageToAll(message)
-            
+
             // Determine next player
             determineNextPlayer()
         }
@@ -535,6 +543,7 @@ class GameRepository @Inject constructor() {
                 val currentCardCounts = _playerCardCounts.value.toMutableMap()
                 currentCardCounts[message.playedCards.playerId] = message.remainingCardCount
                 _playerCardCounts.value = currentCardCounts
+                
 
                 if (_isHost.value) {
                     // Notify all players about the played cards
@@ -542,6 +551,7 @@ class GameRepository @Inject constructor() {
                     val serializedMessage = serializeMessage(updateMessage)
                     bluetoothService?.sendMessageToAll(serializedMessage)
                 }
+
             }
 
               is GameMessage.PlayerPassed -> {
@@ -554,6 +564,13 @@ class GameRepository @Inject constructor() {
                     val serializedMessage = serializeMessage(passMessage)
                     bluetoothService?.sendMessageToAll(serializedMessage)
                 }
+            }
+
+            is GameMessage.PlayerFinished -> {
+                Log.d(TAG, "Player ${message.playerId} finished their turn")
+                
+                // Add player to finished players list
+                playerFinished(message.playerId)
             }
             
             is GameMessage.UpdateTurn -> {

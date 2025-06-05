@@ -148,7 +148,9 @@ class BluetoothService(
                 false
             }
         }
-    }suspend fun connectToServer(device: BluetoothDevice, uuid: UUID): Boolean {
+    }
+    
+    suspend fun connectToServer(device: BluetoothDevice, uuid: UUID): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 Log.d(TAG, "Connecting to server device: ${device.name} (${device.address})")
